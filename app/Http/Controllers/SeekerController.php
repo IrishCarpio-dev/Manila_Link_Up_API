@@ -71,4 +71,21 @@ class SeekerController extends Controller
             ]
         ]);
     }
+
+    public function getProfile(Request $request)
+    {
+        $uid = $request->uid;
+
+        if (!$uid) {
+            return response()->json(['error' => 'UID not found'], 400);
+        }
+
+        $seeker = $this->database->getReference('seekers/' . $request->uid)->getValue();
+
+        if ($seeker) {
+            return response()->json($seeker);
+        }
+
+        return response()->json(['error' => 'User not found'], 404);
+    }
 }

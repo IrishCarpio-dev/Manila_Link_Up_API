@@ -16,7 +16,7 @@ class EmployerController extends Controller
 
     public function signUp(Request $request)
     {
-        $uid = $request->uid;
+        $uid = $request->firebase_uid;
 
         if (!$uid) {
             return response()->json(['error' => 'UID not found'], 400);

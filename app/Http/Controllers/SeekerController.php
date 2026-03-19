@@ -16,7 +16,7 @@ class SeekerController extends Controller
 
     public function signup(Request $request)
     {
-        $uid = $request->uid;//$request->firebase_email;
+        $uid = $request->uid;
 
         if (!$uid) {
             return response()->json(['error' => 'UID not found'], 400);
@@ -70,22 +70,5 @@ class SeekerController extends Controller
                 'seeker_verified' => 0
             ]
         ]);
-    }
-
-    public function getProfile(Request $request)
-    {
-        $uid = $request->uid;
-
-        if (!$uid) {
-            return response()->json(['error' => 'UID not found'], 400);
-        }
-
-        $seeker = $this->database->getReference('seekers/' . $request->uid)->getValue();
-
-        if ($seeker) {
-            return response()->json($seeker);
-        }
-
-        return response()->json(['error' => 'User not found'], 404);
     }
 }

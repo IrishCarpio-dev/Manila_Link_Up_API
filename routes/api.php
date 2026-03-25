@@ -6,7 +6,10 @@ use Kreait\Firebase\Contract\Database;
 
 use App\Http\Middleware\FirebaseAuthMiddleware;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\UserController;
 use App\Http\Controllers\SeekerController;
+use App\Http\Controllers\EmployerController;
+use App\Http\Controllers\AdminController;
 
 // This is your test route
 Route::get('/test-firebase', function (Database $database) {
@@ -21,6 +24,15 @@ Route::get('/test-firebase', function (Database $database) {
 Route::post('/register-seeker', [AuthController::class, 'registerSeeker']);
 
 Route::middleware([FirebaseAuthMiddleware::class])->group(function () {
-    Route::post('/seeker/signup', [SeekerController::class, 'signup']);
-    Route::get('/seeker/profile', [SeekerController::class, 'getProfile']);
+    // User
+    Route::get('/user/profile', [UserController::class, 'profile']);
+
+    // Seeker
+    Route::post('/seeker/signup', [SeekerController::class, 'signUp']);
+
+    // Employer
+    Route::post('/employer/signup', [EmployerController::class, 'signUp']);
+
+    // Admin
+    Route::get('/admin/create', [AdminController::class, 'create']);
 });

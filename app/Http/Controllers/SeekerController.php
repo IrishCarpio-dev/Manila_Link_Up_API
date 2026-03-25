@@ -14,9 +14,9 @@ class SeekerController extends Controller
         $this->database = $database;
     }
 
-    public function signup(Request $request)
+    public function signUp(Request $request)
     {
-        $uid = $request->uid;//$request->firebase_email;
+        $uid = $request->firebase_uid;
 
         if (!$uid) {
             return response()->json(['error' => 'UID not found'], 400);
@@ -32,60 +32,33 @@ class SeekerController extends Controller
             ]);
         }
 
-        // TODO validate fields
+        // TODO: - Validate fields
         // $request->validate([
         //     'seeker_' => 'required|string|max:255'
         // ]);
 
-        // Store in Firebase Realtime DB
+        $newSeeker = [
+            'seeker_address' => $request->seeker_address,
+            'seeker_birthdate' => $request->seeker_birthdate,
+            'seeker_email_address' => $request->seeker_email_address,
+            'seeker_firstname' => $request->seeker_firstname,
+            'seeker_lastname' => $request->seeker_lastname,
+            'seeker_location' => $request->seeker_location,
+            'seeker_mobile_number' => $request->seeker_mobile_number,
+            'seeker_salary' => $request->seeker_salary,
+            'seeker_status' => 0,
+            'seeker_verified' => 0,
+            'created_at' => Database::SERVER_TIMESTAMP,
+            'updated_at' => Database::SERVER_TIMESTAMP
+        ];
+
         $this->database
             ->getReference('seekers/'.$uid)
-            ->set([
-                'seeker_address' => $request->seeker_address,
-                'seeker_birthdate' => $request->seeker_birthdate,
-                'seeker_email_address' => $request->seeker_email_address,
-                'seeker_firstname' => $request->seeker_firstname,
-                'seeker_lastname' => $request->seeker_lastname,
-                'seeker_location' => $request->seeker_location,
-                'seeker_phone_number' => $request->seeker_phone_number,
-                'seeker_salary' => $request->seeker_salary,
-                'seeker_status' => 0,
-                'seeker_verified' => 0,
-                'created_at' => Database::SERVER_TIMESTAMP,
-                'updated_at' => Database::SERVER_TIMESTAMP
-            ]);
+            ->set($newSeeker);
 
         return response()->json([
             'message' => 'Seeker registered successfully',
-            'data' => [
-                'seeker_address' => $request->seeker_address,
-                'seeker_birthdate' => $request->seeker_birthdate,
-                'seeker_email_address' => $request->seeker_email_address,
-                'seeker_firstname' => $request->seeker_firstname,
-                'seeker_lastname' => $request->seeker_lastname,
-                'seeker_location' => $request->seeker_location,
-                'seeker_phone_number' => $request->seeker_phone_number,
-                'seeker_salary' => $request->seeker_salary,
-                'seeker_status' => 0,
-                'seeker_verified' => 0
-            ]
+            'data' => json_encode($newSeeker)
         ]);
-    }
-
-    public function getProfile(Request $request)
-    {
-        $uid = $request->uid;
-
-        if (!$uid) {
-            return response()->json(['error' => 'UID not found'], 400);
-        }
-
-        $seeker = $this->database->getReference('seekers/' . $request->uid)->getValue();
-
-        if ($seeker) {
-            return response()->json($seeker);
-        }
-
-        return response()->json(['error' => 'User not found'], 404);
     }
 }

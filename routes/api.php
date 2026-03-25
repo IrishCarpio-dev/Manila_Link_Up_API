@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\SeekerController;
 use App\Http\Controllers\EmployerController;
+use App\Http\Controllers\AdminController;
 
 // This is your test route
 Route::get('/test-firebase', function (Database $database) {

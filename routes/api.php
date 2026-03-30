@@ -29,6 +29,7 @@ Route::middleware([FirebaseAuthMiddleware::class])->group(function () {
 
     // Seeker
     Route::post('/seeker/signup', [SeekerController::class, 'signUp']);
+    Route::post('/seeker/setupProfile', [SeekerController::class, 'setupProfile']);
 
     // Employer
     Route::post('/employer/signup', [EmployerController::class, 'signUp']);

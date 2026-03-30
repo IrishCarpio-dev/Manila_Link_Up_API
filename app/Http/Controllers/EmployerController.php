@@ -3,28 +3,30 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
-use Kreait\Firebase\Contract\Database;
+use Kreait\Laravel\Firebase\Facades\Firebase;
 
 class EmployerController extends Controller
 {
     protected $database;
 
-    public function __construct(Database $database)
+    public function __construct()
     {
-        $this->database = $database;
+        $this->database = Firebase::firestore()->database();
     }
 
     public function signUp(Request $request)
     {
-        $uid = $request->firebase_uid;
+        $uid = $request->auth_uid;
 
         if (!$uid) {
             return response()->json(['error' => 'UID not found'], 400);
         }
 
         $existing = $this->database
-            ->getReference('employers/'.$uid)
-            ->getValue();
+            ->collection('employers')
+            ->document($uid)
+            ->snapshot()
+            ->exists();
 
         // TODO: - Validate fields
 
@@ -35,26 +37,37 @@ class EmployerController extends Controller
         }
 
         $newEmployer = [
-            'employer_address' => $request->employer_address,
-            'employer_birthdate' => $request->employer_birthdate,
-            'employer_email_address' => $request->employer_email_address,
-            'employer_fullname' => $request->employer_fullname,
-            'employer_location' => $request->employer_location,
-            'employer_mobile_number' => $request->employer_mobile_number,
-            'employer_status' => 0,
-            'employer_valid_id' => 0,
-            'employer_verified' => 0,
+            'address' => $request->address,
+            'birth_date' => $request->birth_date,
+            'email' => $request->email,
+            'full_name' => $request->full_name,
+            'location' => $request->location,
+            'mobile_number' => $request->mobile_number,
+            'status' => 0,
+            'is_verified' => 0,
             'created_at' => Database::SERVER_TIMESTAMP,
             'updated_at' => Database::SERVER_TIMESTAMP
         ];
 
+        // $this->database
+        //     ->getReference('employers/'.$uid)
+        //     ->set($newEmployer);
+
         $this->database
-            ->getReference('employers/'.$uid)
-            ->set($newEmployer);
+            ->collection('employers')
+            ->document($uid)
+            ->set(newEmployer);
 
         return response()->json([
             'message' => 'Employer registered successfully',
             'data' => json_encode($newEmployer)
         ]);
+    }
+
+    public function updateMedia(Request $request)
+    {
+        $result = UserMediaUploader::updateMedia($request, 'employer', $uid);
+
+        return response()->$result;
     }
 }

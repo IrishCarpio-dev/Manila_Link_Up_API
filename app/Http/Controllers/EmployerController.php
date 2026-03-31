@@ -16,7 +16,7 @@ class EmployerController extends Controller
 
     public function signUp(Request $request)
     {
-        $uid = $request->auth_uid;
+        $uid = $request->authUid;
 
         if (!$uid) {
             return response()->json(['error' => 'UID not found'], 400);
@@ -38,15 +38,15 @@ class EmployerController extends Controller
 
         $newEmployer = [
             'address' => $request->address,
-            'birth_date' => $request->birth_date,
+            'birthDate' => $request->birthDate,
             'email' => $request->email,
-            'full_name' => $request->full_name,
+            'fullName' => $request->fullName,
             'location' => $request->location,
-            'mobile_number' => $request->mobile_number,
+            'mobileNumber' => $request->mobileNumber,
             'status' => 0,
-            'is_verified' => 0,
-            'created_at' => Database::SERVER_TIMESTAMP,
-            'updated_at' => Database::SERVER_TIMESTAMP
+            'isVerified' => 0,
+            'createdAt' => Database::SERVER_TIMESTAMP,
+            'updatedAt' => Database::SERVER_TIMESTAMP
         ];
 
         // $this->database

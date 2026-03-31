@@ -17,7 +17,7 @@ class AdminController extends Controller
 
     public function verifyUser(Request $request)
     {
-        $uid = $request->auth_uid;
+        $uid = $request->authUid;
 
         if (!$uid) {
             return response()->json(['error' => 'UID not found'], 400);
@@ -42,11 +42,11 @@ class AdminController extends Controller
 
         $isSeeker = $request->type === 'seeker';
         $collection = ($isSeeker) ? 'seekers' : 'employers';
-        $user_uid = $request->user_uid;
+        $userUid = $request->userUid;
 
         $isExisting = $this->database
             ->collection($collection)
-            ->document($user_uid)
+            ->document($userUid)
             ->snapshot()
             ->exists();
 
@@ -59,14 +59,14 @@ class AdminController extends Controller
 
         $this->database
             ->collection($collection)
-            ->document($user_uid)
+            ->document($userUid)
             ->update([
-                ['path' => 'is_verified', 'value' => TRUE],
-                ['path' => 'updated_at', 'value' => FieldValue::serverTiemstamp()]
+                ['path' => 'isVerified', 'value' => TRUE],
+                ['path' => 'updatedAt', 'value' => FieldValue::serverTiemstamp()]
             ]);
 
         return response()->json([
-            'message' => "User " . $user_uid . " verified."
+            'message' => "User " . $userUid . " verified."
         ]);
     }
 }

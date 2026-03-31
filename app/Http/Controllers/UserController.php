@@ -16,7 +16,7 @@ class UserController extends Controller
 
     public function profile(Request $request)
     {
-        $uid = $request->auth_uid;
+        $uid = $request->authUid;
 
         if (!$uid) {
             return response()->json(['error' => 'UID not found'], 400);

@@ -21,7 +21,7 @@ class SeekerController extends Controller
 
     public function signUp(Request $request)
     {
-        $uid = $request->auth_uid;
+        $uid = $request->authUid;
 
         if (!$uid) {
             return response()->json(['error' => 'UID not found'], 400);
@@ -44,21 +44,21 @@ class SeekerController extends Controller
         //     'seeker_' => 'required|string|max:255'
         // ]);
 
-        $dateString = $request->birth_date;
+        $dateString = $request->birthDate;
 
         $immutableDate = Carbon::parse($dateString)->toDateTimeImmutable();
         $firestoreTimestamp = new Timestamp($immutableDate);
 
         $newElement = [
-            'email' => $request->seeker_email_address,
-            'first_name' => $request->seeker_firstname,
-            'last_name' => $request->seeker_lastname,
-            'mobile_number' => $request->seeker_mobile_number,
-            'is_open_for_work' => FALSE,
-            'is_verified' => FALSE,
-            'is_profile_set' => FALSE,
-            'created_at' => FieldValue::serverTimestamp(),
-            'updated_at' => FieldValue::serverTimestamp()
+            'email' => $request->email,
+            'firstName' => $request->firstName,
+            'lastName' => $request->lastName,
+            'mobileNumber' => $request->mobileNumber,
+            'isOpenForWork' => FALSE,
+            'isVerified' => FALSE,
+            'isProfileSet' => FALSE,
+            'createdAt' => FieldValue::serverTimestamp(),
+            'updatedAt' => FieldValue::serverTimestamp()
         ];
 
         $this->database
@@ -75,7 +75,7 @@ class SeekerController extends Controller
     public function setupProfile(Request $request)
     {
         // VALIDATIONS
-        $uid = $request->auth_uid;
+        $uid = $request->authUid;
 
         $seekerReference = $this->database
             ->collection('seekers')
@@ -90,12 +90,12 @@ class SeekerController extends Controller
         }
 
         validator($request->all(), [
-            'profile_photo' => [
+            'profilePhoto' => [
                 'file', 
                 'image|mimes:jpeg,png,jpg', 
                 'max:2048'
             ],
-            'valid_id' => [
+            'validId' => [
                 'required',
                 'file',
                 'image|mimes:jpeg,png,jpg',
@@ -110,31 +110,31 @@ class SeekerController extends Controller
         ])->validate(); 
 
         // SAVE FILES
-        $profile_photo_url = "";
-        if ($request->hasFile('profile_photo')) {
-            $profile_photo_url = FileUploader::upload($request->file('profile_photo'), 'profiles');
+        $profilePhotoUrl = "";
+        if ($request->hasFile('profilePhoto')) {
+            $profilePhotoUrl = FileUploader::upload($request->file('profilePhoto'), 'profilePhotos');
         }
 
-        $clearance_url = FileUploader::upload($request->file('clearance'), 'clearances');
-        $valid_id_url = FileUploader::upload($request->file('valid_id'), 'valid_ids');
+        $clearanceUrl = FileUploader::upload($request->file('clearance'), 'clearances');
+        $validIdUrl = FileUploader::upload($request->file('validId'), 'validIds');
 
         // STORE DATA
-        $dateString = $request->birth_date;
+        $dateString = $request->birthDate;
         $immutableDate = Carbon::parse($dateString)->toDateTimeImmutable();
         $birthDateTimestamp = new Timestamp($immutableDate);
 
         $newElement = [
             ['path' => 'address', 'value' => $request->address],
-            ['path' => 'birth_date', 'value' => $birthDateTimestamp],
+            ['path' => 'birthDate', 'value' => $birthDateTimestamp],
             ['path' => 'location', 'value' => $request->location],
-            ['path' => 'clearance_url', 'value' => $clearance_url],
-            ['path' => 'valid_id_url', 'value' => $valid_id_url],
-            ['path' => 'is_profile_set', 'value' => TRUE],
-            ['path' => 'updated_at', 'value' => FieldValue::serverTimestamp()]
+            ['path' => 'clearanceUrl', 'value' => $clearanceUrl],
+            ['path' => 'validIdUrl', 'value' => $validIdUrl],
+            ['path' => 'isProfileSet', 'value' => TRUE],
+            ['path' => 'updatedAt', 'value' => FieldValue::serverTimestamp()]
         ];
 
-        if (!empty($profile_photo_url)) {
-            $newElement[] = ['path' => 'profile_photo_url', 'value' => $profile_photo_url];
+        if (!empty($profilePhotoUrl)) {
+            $newElement[] = ['path' => 'profilePhotoUrl', 'value' => $profilePhotoUrl];
         }
 
         $seekerReference->update($newElement);

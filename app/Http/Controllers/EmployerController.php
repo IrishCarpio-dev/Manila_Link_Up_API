@@ -3,7 +3,11 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use Google\Cloud\Firestore\FieldValue;
+use Google\Cloud\Core\Timestamp;
+use Carbon\Carbon;
 use Kreait\Laravel\Firebase\Facades\Firebase;
+use App\Services\FileUploader;
 
 class EmployerController extends Controller
 {
@@ -37,26 +41,19 @@ class EmployerController extends Controller
         }
 
         $newEmployer = [
-            'address' => $request->address,
-            'birthDate' => $request->birthDate,
             'email' => $request->email,
             'fullName' => $request->fullName,
-            'location' => $request->location,
             'mobileNumber' => $request->mobileNumber,
-            'status' => 0,
-            'isVerified' => 0,
-            'createdAt' => Database::SERVER_TIMESTAMP,
-            'updatedAt' => Database::SERVER_TIMESTAMP
+            'isProfileSet' => FALSE,
+            'isVerified' => FALSE,
+            'createdAt' => FieldValue::serverTimestamp(),
+            'updatedAt' => FieldValue::serverTimestamp()
         ];
-
-        // $this->database
-        //     ->getReference('employers/'.$uid)
-        //     ->set($newEmployer);
 
         $this->database
             ->collection('employers')
             ->document($uid)
-            ->set(newEmployer);
+            ->set($newEmployer);
 
         return response()->json([
             'message' => 'Employer registered successfully',
@@ -64,10 +61,75 @@ class EmployerController extends Controller
         ]);
     }
 
-    public function updateMedia(Request $request)
+    public function setupProfile(Request $request)
     {
-        $result = UserMediaUploader::updateMedia($request, 'employer', $uid);
+        // VALIDATIONS
+        $uid = $request->authUid;
 
-        return response()->$result;
+        $reference = $this->database
+            ->collection('employers')
+            ->document($uid);
+        $snapshot = $reference->snapshot();
+
+        if (!$snapshot->exists()) {
+            return response()->json([
+                'error' => 'User not found.',
+                404
+            ]);
+        }
+
+        validator($request->all(), [
+            'profilePhoto' => [
+                'file', 
+                'image|mimes:jpeg,png,jpg', 
+                'max:2048'
+            ],
+            'validId' => [
+                'required',
+                'file',
+                'image|mimes:jpeg,png,jpg',
+                'max:5120'
+            ],
+            'clearance' => [
+                'required',
+                'file',
+                'image|mimes:jpeg,png,jpg',
+                'max:5120'
+            ]
+        ])->validate(); 
+
+        // SAVE FILES
+        $profilePhotoUrl = "";
+        if ($request->hasFile('profilePhoto')) {
+            $profilePhotoUrl = FileUploader::upload($request->file('profilePhoto'), 'profilePhotos');
+        }
+
+        $clearanceUrl = FileUploader::upload($request->file('clearance'), 'clearances');
+        $validIdUrl = FileUploader::upload($request->file('validId'), 'validIds');
+
+        // STORE DATA
+        $dateString = $request->birthDate;
+        $immutableDate = Carbon::parse($dateString)->toDateTimeImmutable();
+        $birthDateTimestamp = new Timestamp($immutableDate);
+
+        $newElement = [
+            ['path' => 'address', 'value' => $request->address],
+            ['path' => 'birthDate', 'value' => $birthDateTimestamp],
+            ['path' => 'clearanceUrl', 'value' => $clearanceUrl],
+            ['path' => 'validIdUrl', 'value' => $validIdUrl],
+            ['path' => 'isProfileSet', 'value' => TRUE],
+            ['path' => 'updatedAt', 'value' => FieldValue::serverTimestamp()]
+        ];
+
+        if (!empty($profilePhotoUrl)) {
+            $newElement[] = ['path' => 'profilePhotoUrl', 'value' => $profilePhotoUrl];
+        }
+
+        $reference->update($newElement);
+
+        return response()->json([
+            'message' => 'Profile set up successfully.',
+            'data' => json_encode($snapshot->data())
+        ]);
     }
 }

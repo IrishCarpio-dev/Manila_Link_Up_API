@@ -81,19 +81,22 @@ class EmployerController extends Controller
         validator($request->all(), [
             'profilePhoto' => [
                 'file', 
-                'image|mimes:jpeg,png,jpg', 
+                'image',
+                'mimes:jpeg,png,jpg', 
                 'max:2048'
             ],
             'validId' => [
                 'required',
                 'file',
-                'image|mimes:jpeg,png,jpg',
+                'image',
+                'mimes:jpeg,png,jpg',
                 'max:5120'
             ],
             'clearance' => [
                 'required',
                 'file',
-                'image|mimes:jpeg,png,jpg',
+                'image',
+                'mimes:jpeg,png,jpg',
                 'max:5120'
             ]
         ])->validate(); 
@@ -113,7 +116,7 @@ class EmployerController extends Controller
         $birthDateTimestamp = new Timestamp($immutableDate);
 
         $newElement = [
-            ['path' => 'address', 'value' => $request->address],
+            ['path' => 'location', 'value' => $request->location],
             ['path' => 'birthDate', 'value' => $birthDateTimestamp],
             ['path' => 'clearanceUrl', 'value' => $clearanceUrl],
             ['path' => 'validIdUrl', 'value' => $validIdUrl],

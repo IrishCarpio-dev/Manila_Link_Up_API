@@ -33,6 +33,7 @@ Route::middleware([FirebaseAuthMiddleware::class])->group(function () {
 
     // Employer
     Route::post('/employer/signup', [EmployerController::class, 'signUp']);
+    Route::post('/employer/setupProfile', [EmployerController::class, 'setupProfile']);
 
     // Admin
     Route::get('/admin/create', [AdminController::class, 'create']);

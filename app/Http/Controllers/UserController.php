@@ -3,20 +3,20 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
-use Kreait\Firebase\Contract\Database;
+use Kreait\Laravel\Firebase\Facades\Firebase;
 
 class UserController extends Controller
 {
-    protected $database;
+    protected $firestore;
 
-    public function __construct(Database $database)
+    public function __construct()
     {
-        $this->database = $database;
+        $this->firestore = Firebase::firestore()->database();
     }
 
     public function profile(Request $request)
     {
-        $uid = $request->uid;
+        $uid = $request->authUid;
 
         if (!$uid) {
             return response()->json(['error' => 'UID not found'], 400);
@@ -27,7 +27,11 @@ class UserController extends Controller
 
         foreach ($userTypes as $type)
             {
-                $data = $this->database->getReference($type.'/'.$uid)->getValue();
+                $data = $this->firestore
+                    ->collection($type)
+                    ->document($uid)
+                    ->snapshot()
+                    ->data();
 
                 if ($data) {
                     $profiles[$type] = $data;
@@ -35,7 +39,7 @@ class UserController extends Controller
             }
 
         if (!empty($profiles)) {
-            return response()->json(json_encode($profiles));
+            return response()->json($profiles);
         }
 
         return response()->json(['error' => 'User not found'], 404);

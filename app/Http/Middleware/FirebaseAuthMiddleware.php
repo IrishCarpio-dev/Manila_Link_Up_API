@@ -32,7 +32,7 @@ class FirebaseAuthMiddleware
         try {
             $verifiedIdToken = $this->auth->verifyIdToken($token);
             $uid = $verifiedIdToken->claims()->get('sub');
-            $request->merge(['firebase_uid' => $uid]);
+            $request->merge(['authUid' => $uid]);
         } catch (\Throwable $e) {
             return response()->json(['error' => 'Invalid token'], 401);
         }

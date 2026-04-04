@@ -3,28 +3,34 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
-use Kreait\Firebase\Contract\Database;
+use Google\Cloud\Firestore\FieldValue;
+use Google\Cloud\Core\Timestamp;
+use Carbon\Carbon;
+use Kreait\Laravel\Firebase\Facades\Firebase;
+use App\Services\FileUploader;
 
 class EmployerController extends Controller
 {
     protected $database;
 
-    public function __construct(Database $database)
+    public function __construct()
     {
-        $this->database = $database;
+        $this->database = Firebase::firestore()->database();
     }
 
     public function signUp(Request $request)
     {
-        $uid = $request->firebase_uid;
+        $uid = $request->authUid;
 
         if (!$uid) {
             return response()->json(['error' => 'UID not found'], 400);
         }
 
         $existing = $this->database
-            ->getReference('employers/'.$uid)
-            ->getValue();
+            ->collection('employers')
+            ->document($uid)
+            ->snapshot()
+            ->exists();
 
         // TODO: - Validate fields
 
@@ -35,26 +41,98 @@ class EmployerController extends Controller
         }
 
         $newEmployer = [
-            'employer_address' => $request->employer_address,
-            'employer_birthdate' => $request->employer_birthdate,
-            'employer_email_address' => $request->employer_email_address,
-            'employer_fullname' => $request->employer_fullname,
-            'employer_location' => $request->employer_location,
-            'employer_mobile_number' => $request->employer_mobile_number,
-            'employer_status' => 0,
-            'employer_valid_id' => 0,
-            'employer_verified' => 0,
-            'created_at' => Database::SERVER_TIMESTAMP,
-            'updated_at' => Database::SERVER_TIMESTAMP
+            'email' => $request->email,
+            'fullName' => $request->fullName,
+            'mobileNumber' => $request->mobileNumber,
+            'isProfileSet' => FALSE,
+            'isVerified' => FALSE,
+            'createdAt' => FieldValue::serverTimestamp(),
+            'updatedAt' => FieldValue::serverTimestamp()
         ];
 
         $this->database
-            ->getReference('employers/'.$uid)
+            ->collection('employers')
+            ->document($uid)
             ->set($newEmployer);
 
         return response()->json([
             'message' => 'Employer registered successfully',
             'data' => json_encode($newEmployer)
+        ]);
+    }
+
+    public function setupProfile(Request $request)
+    {
+        // VALIDATIONS
+        $uid = $request->authUid;
+
+        $reference = $this->database
+            ->collection('employers')
+            ->document($uid);
+        $snapshot = $reference->snapshot();
+
+        if (!$snapshot->exists()) {
+            return response()->json([
+                'error' => 'User not found.',
+                404
+            ]);
+        }
+
+        validator($request->all(), [
+            'profilePhoto' => [
+                'file', 
+                'image',
+                'mimes:jpeg,png,jpg', 
+                'max:2048'
+            ],
+            'validId' => [
+                'required',
+                'file',
+                'image',
+                'mimes:jpeg,png,jpg',
+                'max:5120'
+            ],
+            'clearance' => [
+                'required',
+                'file',
+                'image',
+                'mimes:jpeg,png,jpg',
+                'max:5120'
+            ]
+        ])->validate(); 
+
+        // SAVE FILES
+        $profilePhotoUrl = "";
+        if ($request->hasFile('profilePhoto')) {
+            $profilePhotoUrl = FileUploader::upload($request->file('profilePhoto'), 'profilePhotos');
+        }
+
+        $clearanceUrl = FileUploader::upload($request->file('clearance'), 'clearances');
+        $validIdUrl = FileUploader::upload($request->file('validId'), 'validIds');
+
+        // STORE DATA
+        $dateString = $request->birthDate;
+        $immutableDate = Carbon::parse($dateString)->toDateTimeImmutable();
+        $birthDateTimestamp = new Timestamp($immutableDate);
+
+        $newElement = [
+            ['path' => 'location', 'value' => $request->location],
+            ['path' => 'birthDate', 'value' => $birthDateTimestamp],
+            ['path' => 'clearanceUrl', 'value' => $clearanceUrl],
+            ['path' => 'validIdUrl', 'value' => $validIdUrl],
+            ['path' => 'isProfileSet', 'value' => TRUE],
+            ['path' => 'updatedAt', 'value' => FieldValue::serverTimestamp()]
+        ];
+
+        if (!empty($profilePhotoUrl)) {
+            $newElement[] = ['path' => 'profilePhotoUrl', 'value' => $profilePhotoUrl];
+        }
+
+        $reference->update($newElement);
+
+        return response()->json([
+            'message' => 'Profile set up successfully.',
+            'data' => json_encode($snapshot->data())
         ]);
     }
 }

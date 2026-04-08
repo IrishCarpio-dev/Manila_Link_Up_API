@@ -39,7 +39,7 @@ class JobController extends Controller
             'title'       => ['required', 'string', 'max:255'],
             'description' => ['required', 'string', 'max:5000'],
             'expiresAt'      => ['required', 'date'],
-            'duration'    => ['required', 'string', 'max:255'],
+            'duration'    => ['required', 'regex:/^\d+\s+(hours?|days?|weeks?|months?|years?)$/i'],
             'salary'      => ['required', 'numeric', 'min:0'],
             'location'    => ['required', 'string', 'max:255'],
         ])->validate();

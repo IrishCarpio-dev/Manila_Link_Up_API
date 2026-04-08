@@ -37,7 +37,8 @@ class AdminController extends Controller
         }
 
         $request->validate([
-            'type'  => 'required|in:seeker,employer'
+            'type'    => 'required|in:seeker,employer',
+            'userUid' => 'required|string',
         ]);
 
         $isSeeker = $request->type === 'seeker';
@@ -50,7 +51,7 @@ class AdminController extends Controller
             ->snapshot()
             ->exists();
 
-        if (!isExisting) {
+        if (!$isExisting) {
             return response()->json([
                 'error' => 'User not found',
                 404
@@ -62,7 +63,7 @@ class AdminController extends Controller
             ->document($userUid)
             ->update([
                 ['path' => 'isVerified', 'value' => TRUE],
-                ['path' => 'updatedAt', 'value' => FieldValue::serverTiemstamp()]
+                ['path' => 'updatedAt', 'value' => FieldValue::serverTimestamp()]
             ]);
 
         return response()->json([

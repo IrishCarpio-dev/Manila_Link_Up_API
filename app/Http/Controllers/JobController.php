@@ -72,9 +72,10 @@ class JobController extends Controller
         ], 201);
     }
 
-    public function destroy(Request $request, string $id)
+    public function destroy(Request $request)
     {
         $uid = $request->authUid;
+        $id = $request->jobId;
 
         if (!$uid) {
             return response()->json(['error' => 'UID not found'], 400);

@@ -42,5 +42,5 @@ Route::middleware([FirebaseAuthMiddleware::class])->group(function () {
     // Jobs
     Route::post('/jobs', [JobController::class, 'store']);
     Route::get('/jobs', [JobController::class, 'index']);
-    Route::delete('/jobs/{id}', [JobController::class, 'destroy']);
+    Route::post('/jobs/archive', [JobController::class, 'destroy']);
 });

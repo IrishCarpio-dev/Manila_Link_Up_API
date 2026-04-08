@@ -109,13 +109,13 @@ class JobController extends Controller
     public function index(Request $request)
     {
         validator($request->all(), [
-            'limit'          => ['sometimes', 'integer', 'min:1', 'max:50'],
-            'sort_by'        => ['sometimes', 'string', 'in:createdAt,salary,expiresAt'],
-            'sort_direction'  => ['sometimes', 'string', 'in:asc,desc'],
-            'employer'       => ['sometimes', 'string'],
-            'min_salary'     => ['sometimes', 'numeric', 'min:0'],
-            'max_salary'     => ['sometimes', 'numeric', 'min:0'],
-            'start_after'    => ['sometimes', 'string'],
+            'limit'         => ['sometimes', 'integer', 'min:1', 'max:50'],
+            'sortBy'        => ['sometimes', 'string', 'in:createdAt,salary,expiresAt'],
+            'sortDirection' => ['sometimes', 'string', 'in:asc,desc'],
+            'employer'      => ['sometimes', 'string'],
+            'minSalary'     => ['sometimes', 'numeric', 'min:0'],
+            'maxSalary'     => ['sometimes', 'numeric', 'min:0'],
+            'startAfter'    => ['sometimes', 'string'],
         ])->validate();
 
         $query = $this->database->collection('jobs');
@@ -124,8 +124,8 @@ class JobController extends Controller
         $query = $query->where('deletedAt', '=', null);
         $query = $query->where('expiresAt', '>', $nowTimestamp);
 
-        $sortBy = $request->input('sort_by', 'createdAt');
-        $sortDirection = $request->input('sort_direction', 'desc');
+        $sortBy = $request->input('sortBy', 'createdAt');
+        $sortDirection = $request->input('sortDirection', 'desc');
 
         // Equality filters
         if ($request->filled('employer')) {
@@ -133,13 +133,13 @@ class JobController extends Controller
         }
 
         // Range filters — Firestore requires range-filtered field to be the first orderBy
-        if ($request->filled('min_salary') || $request->filled('max_salary')) {
+        if ($request->filled('minSalary') || $request->filled('maxSalary')) {
             $sortBy = 'salary';
-            if ($request->filled('min_salary')) {
-                $query = $query->where('salary', '>=', (float) $request->min_salary);
+            if ($request->filled('minSalary')) {
+                $query = $query->where('salary', '>=', (float) $request->minSalary);
             }
-            if ($request->filled('max_salary')) {
-                $query = $query->where('salary', '<=', (float) $request->max_salary);
+            if ($request->filled('maxSalary')) {
+                $query = $query->where('salary', '<=', (float) $request->maxSalary);
             }
         }
 
@@ -149,8 +149,8 @@ class JobController extends Controller
         }
 
         // Cursor-based pagination
-        if ($request->filled('start_after')) {
-            $startAfterValue = $request->start_after;
+        if ($request->filled('startAfter')) {
+            $startAfterValue = $request->startAfter;
 
             if ($sortBy === 'salary') {
                 $startAfterValue = (float) $startAfterValue;

@@ -92,19 +92,22 @@ class SeekerController extends Controller
         validator($request->all(), [
             'profilePhoto' => [
                 'file', 
-                'image|mimes:jpeg,png,jpg', 
+                'image',
+                'mimes:jpeg,png,jpg', 
                 'max:2048'
             ],
             'validId' => [
                 'required',
                 'file',
-                'image|mimes:jpeg,png,jpg',
+                'image',
+                'mimes:jpeg,png,jpg',
                 'max:5120'
             ],
             'clearance' => [
                 'required',
                 'file',
-                'image|mimes:jpeg,png,jpg',
+                'image',
+                'mimes:jpeg,png,jpg',
                 'max:5120'
             ]
         ])->validate(); 

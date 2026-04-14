@@ -10,6 +10,7 @@ use App\Http\Controllers\UserController;
 use App\Http\Controllers\SeekerController;
 use App\Http\Controllers\EmployerController;
 use App\Http\Controllers\AdminController;
+use App\Http\Controllers\JobController;
 
 // This is your test route
 Route::get('/test-firebase', function (Database $database) {
@@ -37,4 +38,9 @@ Route::middleware([FirebaseAuthMiddleware::class])->group(function () {
 
     // Admin
     Route::get('/admin/create', [AdminController::class, 'create']);
+
+    // Jobs
+    Route::post('/jobs', [JobController::class, 'store']);
+    Route::post('/jobs/list', [JobController::class, 'index']);
+    Route::post('/jobs/archive', [JobController::class, 'destroy']);
 });

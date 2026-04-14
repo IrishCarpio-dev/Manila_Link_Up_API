@@ -32,13 +32,17 @@ class EmployerController extends Controller
             ->snapshot()
             ->exists();
 
-        // TODO: - Validate fields
-
         if ($existing) {
             return response()->json([
                 'error' => 'User already exists'
             ]);
         }
+
+        validator($request->all(), [
+            'email'        => ['required', 'email', 'max:255'],
+            'fullName'     => ['required', 'string', 'max:255'],
+            'mobileNumber' => ['required', 'string', 'max:20'],
+        ])->validate();
 
         $newEmployer = [
             'email' => $request->email,
@@ -79,10 +83,12 @@ class EmployerController extends Controller
         }
 
         validator($request->all(), [
+            'birthDate'    => ['required', 'date'],
+            'location'     => ['required', 'string', 'max:255'],
             'profilePhoto' => [
-                'file', 
+                'file',
                 'image',
-                'mimes:jpeg,png,jpg', 
+                'mimes:jpeg,png,jpg',
                 'max:2048'
             ],
             'validId' => [
@@ -99,7 +105,7 @@ class EmployerController extends Controller
                 'mimes:jpeg,png,jpg',
                 'max:5120'
             ]
-        ])->validate(); 
+        ])->validate();
 
         // SAVE FILES
         $profilePhotoUrl = "";

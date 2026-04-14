@@ -11,6 +11,7 @@ use App\Http\Controllers\SeekerController;
 use App\Http\Controllers\EmployerController;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\JobController;
+use App\Http\Controllers\ApplicationController;
 
 // This is your test route
 Route::get('/test-firebase', function (Database $database) {
@@ -43,4 +44,11 @@ Route::middleware([FirebaseAuthMiddleware::class])->group(function () {
     Route::post('/jobs', [JobController::class, 'store']);
     Route::post('/jobs/list', [JobController::class, 'index']);
     Route::post('/jobs/archive', [JobController::class, 'destroy']);
+    Route::post('/jobs/apply', [ApplicationController::class, 'apply']);
+    Route::post('/jobs/withdraw', [ApplicationController::class, 'withdraw']);
+    Route::post('/jobs/applicants', [ApplicationController::class, 'jobApplicants']);
+
+    // Applications
+    Route::post('/seeker/appliedJobs', [ApplicationController::class, 'seekerApplications']);
+    Route::post('/applications/updateStatus', [ApplicationController::class, 'updateStatus']);
 });

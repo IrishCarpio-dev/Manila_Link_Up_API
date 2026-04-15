@@ -39,7 +39,10 @@ class UserController extends Controller
             }
 
         if (!empty($profiles)) {
-            return response()->json($profiles);
+            return response()->json([
+                'message' => 'User profile retrieved successfully',
+                'data'    => $profiles,
+            ], 200);
         }
 
         return response()->json(['error' => 'User not found'], 404);

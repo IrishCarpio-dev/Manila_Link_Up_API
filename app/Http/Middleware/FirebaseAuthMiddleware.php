@@ -30,10 +30,13 @@ class FirebaseAuthMiddleware
         }
 
         try {
-            $verifiedIdToken = $this->auth->verifyIdToken($token);
+            $verifiedIdToken = $this->auth->verifyIdToken($token, false, 60);
             $uid = $verifiedIdToken->claims()->get('sub');
             $request->merge(['authUid' => $uid]);
         } catch (\Throwable $e) {
+            \Log::error('FirebaseAuthMiddleware: ' . $e->getMessage(), [
+                'exception' => get_class($e),
+            ]);
             return response()->json(['error' => 'Invalid token'], 401);
         }
 

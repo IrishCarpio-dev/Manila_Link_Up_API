@@ -39,15 +39,12 @@ class SeekerController extends Controller
             ]);
         }
 
-        // TODO: - Validate fields
-        // $request->validate([
-        //     'seeker_' => 'required|string|max:255'
-        // ]);
-
-        $dateString = $request->birthDate;
-
-        $immutableDate = Carbon::parse($dateString)->toDateTimeImmutable();
-        $firestoreTimestamp = new Timestamp($immutableDate);
+        validator($request->all(), [
+            'email'        => ['required', 'email', 'max:255'],
+            'firstName'    => ['required', 'string', 'max:255'],
+            'lastName'     => ['required', 'string', 'max:255'],
+            'mobileNumber' => ['required', 'string', 'max:20'],
+        ])->validate();
 
         $newElement = [
             'email' => $request->email,
@@ -90,6 +87,9 @@ class SeekerController extends Controller
         }
 
         validator($request->all(), [
+            'birthDate'   => ['required', 'date'],
+            'address'     => ['required', 'string', 'max:255'],
+            'location'    => ['required', 'string', 'max:255'],
             'profilePhoto' => [
                 'file', 
                 'image',
@@ -110,7 +110,7 @@ class SeekerController extends Controller
                 'mimes:jpeg,png,jpg',
                 'max:5120'
             ]
-        ])->validate(); 
+        ])->validate();
 
         // SAVE FILES
         $profilePhotoUrl = "";

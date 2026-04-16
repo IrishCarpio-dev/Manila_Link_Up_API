@@ -15,6 +15,8 @@ use App\Http\Controllers\ApplicationController;
 use App\Http\Controllers\ChatController;
 use App\Http\Controllers\RatingController;
 use App\Http\Controllers\DeviceController;
+use App\Http\Controllers\ServiceTagController;
+use App\Http\Controllers\SeekerPreferencesController;
 
 Route::get('/test-firebase', function (Database $database) {
     $database->getReference('test_connection')->set([
@@ -34,6 +36,7 @@ Route::middleware([FirebaseAuthMiddleware::class])->group(function () {
     // Seeker
     Route::post('/seeker/signup',       [SeekerController::class, 'signUp']);
     Route::post('/seeker/setupProfile', [SeekerController::class, 'setupProfile']);
+    Route::post('/seeker/preferences', [SeekerPreferencesController::class, 'upsert']);
 
     // Employer
     Route::post('/employer/signup',       [EmployerController::class, 'signUp']);
@@ -51,6 +54,8 @@ Route::middleware([FirebaseAuthMiddleware::class])->group(function () {
     Route::post('/seeker/appliedJobs',      [ApplicationController::class, 'seekerApplications']);
     Route::post('/applications/updateStatus',  [ApplicationController::class, 'updateStatus']);
     Route::post('/applications/markComplete',  [ApplicationController::class, 'markComplete']);
+    Route::post('/seeker/appliedJobs', [ApplicationController::class, 'seekerApplications']);
+    Route::post('/applications/updateStatus', [ApplicationController::class, 'updateStatus']);
 
     // Chat
     Route::post('/chats/list',     [ChatController::class, 'list']);
@@ -75,4 +80,7 @@ Route::middleware([FirebaseAuthMiddleware::class])->group(function () {
     Route::get('/admin/analytics/timeseries',   [AdminController::class, 'analyticsTimeseries']);
     Route::get('/admin/analytics/users',        [AdminController::class, 'analyticsUsers']);
     Route::get('/admin/analytics/ratings',      [AdminController::class, 'analyticsRatings']);
+    
+    // Service Tags
+    Route::get('/service-tags', [ServiceTagController::class, 'index']);
 });

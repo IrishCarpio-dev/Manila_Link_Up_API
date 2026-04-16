@@ -49,12 +49,6 @@ class JobController extends Controller
         $expiryDate      = Carbon::parse($request->expiresAt)->toDateTimeImmutable();
         $expiryTimestamp = new Timestamp($expiryDate);
 
-        $rawTags = $request->input('tags', []);
-        $tags    = array_values(array_unique(array_map(
-            fn($t) => preg_replace('/[^a-z0-9\-]/', '', strtolower(trim($t))),
-            $rawTags
-        )));
-
         $jobData = [
             'title'               => $request->title,
             'description'         => $request->description,

@@ -42,9 +42,19 @@ class JobController extends Controller
             'duration'    => ['required', 'regex:/^\d+\s+(hour|day|week|month|year)\(s\)$/i'],
             'salary'      => ['required', 'numeric', 'min:0'],
             'location'    => ['required', 'string', 'max:255'],
-            'tags'        => ['sometimes', 'array', 'max:10'],
-            'tags.*'      => ['string', 'max:40'],
+            'tags'        => ['required', 'array', 'max:10'],
+            'tags.*'      => ['string'],
         ])->validate();
+
+        foreach ($request->tags as $tagId) {
+            $tagSnap = $this->database->collection('serviceTags')->document($tagId)->snapshot();
+            if (!$tagSnap->exists()) {
+                return response()->json(['error' => "Tag '{$tagId}' not found"], 422);
+            }
+            if (!($tagSnap->data()['isActive'] ?? false)) {
+                return response()->json(['error' => "Tag '{$tagId}' is inactive"], 422);
+            }
+        }
 
         $expiryDate      = Carbon::parse($request->expiresAt)->toDateTimeImmutable();
         $expiryTimestamp = new Timestamp($expiryDate);
@@ -57,7 +67,7 @@ class JobController extends Controller
             'duration'            => $request->duration,
             'salary'              => (float) $request->salary,
             'location'            => $request->location,
-            'tags'                => $tags,
+            'tags'                => $request->tags,
             'deletedAt'           => null,
             'filledAt'            => null,
             'hiredApplicationId'  => null,

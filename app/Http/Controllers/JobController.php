@@ -36,12 +36,14 @@ class JobController extends Controller
         }
 
         validator($request->all(), [
-            'title'       => ['required', 'string', 'max:255'],
-            'description' => ['required', 'string', 'max:5000'],
-            'expiresAt'      => ['required', 'date'],
-            'duration'    => ['required', 'regex:/^\d+\s+(hour|day|week|month|year)\(s\)$/i'],
-            'salary'      => ['required', 'numeric', 'min:0'],
-            'location'    => ['required', 'string', 'max:255'],
+            'title'         => ['required', 'string', 'max:255'],
+            'description'   => ['required', 'string', 'max:5000'],
+            'expiresAt'     => ['required', 'date'],
+            'duration'      => ['required', 'regex:/^\d+\s+(hour|day|week|month|year)\(s\)$/i'],
+            'salary'        => ['required', 'numeric', 'min:0'],
+            'location'      => ['required', 'string', 'max:255'],
+            'serviceTags'   => ['required', 'array', 'min:1'],
+            'serviceTags.*' => ['required', 'string', 'max:100'],
         ])->validate();
 
         $expiryDate = Carbon::parse($request->expiresAt)->toDateTimeImmutable();
@@ -55,6 +57,7 @@ class JobController extends Controller
             'duration'    => $request->duration,
             'salary'      => (float) $request->salary,
             'location'    => $request->location,
+            'serviceTags' => $request->serviceTags,
             'deletedAt'   => null,
             'createdAt'   => FieldValue::serverTimestamp(),
             'updatedAt'   => FieldValue::serverTimestamp(),

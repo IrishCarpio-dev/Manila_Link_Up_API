@@ -7,6 +7,7 @@ use Google\Cloud\Firestore\FieldValue;
 use Google\Cloud\Core\Timestamp;
 use Carbon\Carbon;
 use Kreait\Laravel\Firebase\Facades\Firebase;
+use App\Services\FcmNotifier;
 
 class ApplicationController extends Controller
 {
@@ -53,6 +54,10 @@ class ApplicationController extends Controller
             return response()->json(['error' => 'Job no longer available'], 410);
         }
 
+        if (($job['filledAt'] ?? null) !== null) {
+            return response()->json(['error' => 'Job has already been filled'], 410);
+        }
+
         $nowTimestamp = new Timestamp(Carbon::now()->toDateTimeImmutable());
         if ($job['expiresAt'] < $nowTimestamp) {
             return response()->json(['error' => 'Job posting has expired'], 422);
@@ -72,11 +77,15 @@ class ApplicationController extends Controller
         }
 
         $appData = [
-            'seekerUid' => $uid,
-            'jobId'     => $request->jobId,
-            'status'    => 1,
-            'createdAt' => FieldValue::serverTimestamp(),
-            'updatedAt' => FieldValue::serverTimestamp(),
+            'seekerUid'            => $uid,
+            'jobId'                => $request->jobId,
+            'status'               => 1,
+            'chatId'               => null,
+            'autoRejected'         => false,
+            'employerCompletedAt'  => null,
+            'seekerCompletedAt'    => null,
+            'createdAt'            => FieldValue::serverTimestamp(),
+            'updatedAt'            => FieldValue::serverTimestamp(),
         ];
 
         $docRef = $this->database->collection('applications')->add($appData);
@@ -132,7 +141,7 @@ class ApplicationController extends Controller
         validator($request->all(), [
             'limit'      => ['sometimes', 'integer', 'min:1', 'max:50'],
             'startAfter' => ['sometimes', 'string'],
-            'status'     => ['sometimes', 'integer', 'in:1,2,3,4'],
+            'status'     => ['sometimes', 'integer', 'in:1,2,3,4,5,6'],
         ])->validate();
 
         $query = $this->database->collection('applications')->where('seekerUid', '=', $uid);
@@ -189,6 +198,7 @@ class ApplicationController extends Controller
                     'location'    => $job['location'],
                     'duration'    => $job['duration'],
                     'expiresAt'   => $job['expiresAt'],
+                    'tags'        => $job['tags'] ?? [],
                     'employer'    => $employerData ? [
                         'fullName'        => $employerData['fullName'] ?? null,
                         'profilePhotoUrl' => $employerData['profilePhotoUrl'] ?? null,
@@ -220,7 +230,7 @@ class ApplicationController extends Controller
             'jobId'      => ['required', 'string'],
             'limit'      => ['sometimes', 'integer', 'min:1', 'max:50'],
             'startAfter' => ['sometimes', 'string'],
-            'status'     => ['sometimes', 'integer', 'in:1,2,3,4'],
+            'status'     => ['sometimes', 'integer', 'in:1,2,3,4,5,6'],
         ])->validate();
 
         $jobSnap = $this->database->collection('jobs')->document($request->jobId)->snapshot();
@@ -299,10 +309,11 @@ class ApplicationController extends Controller
 
         validator($request->all(), [
             'applicationId' => ['required', 'string'],
-            'status'        => ['required', 'integer', 'in:2,3,4'],
+            'status'        => ['required', 'integer', 'in:2,3,5'],
         ])->validate();
 
-        $appSnap = $this->database->collection('applications')->document($request->applicationId)->snapshot();
+        $appRef  = $this->database->collection('applications')->document($request->applicationId);
+        $appSnap = $appRef->snapshot();
 
         if (!$appSnap->exists()) {
             return response()->json(['error' => 'Application not found'], 404);
@@ -311,6 +322,11 @@ class ApplicationController extends Controller
         $app = $appSnap->data();
 
         $jobSnap = $this->database->collection('jobs')->document($app['jobId'])->snapshot();
+
+        if (!$jobSnap->exists()) {
+            return response()->json(['error' => 'Job not found'], 404);
+        }
+
         $job = $jobSnap->data();
 
         if ($job['employer'] !== $uid) {
@@ -323,18 +339,204 @@ class ApplicationController extends Controller
             return response()->json(['error' => 'Status is already set to this value'], 422);
         }
 
-        $this->database->collection('applications')->document($request->applicationId)->update([
-            ['path' => 'status',    'value' => $newStatus],
-            ['path' => 'updatedAt', 'value' => FieldValue::serverTimestamp()],
-        ]);
+        // INTERVIEW (2): create chat if not exists
+        if ($newStatus === 2) {
+            $chatId  = $app['jobId'] . '_' . $app['seekerUid'];
+            $chatRef = $this->database->collection('chats')->document($chatId);
+
+            if (!$chatRef->snapshot()->exists()) {
+                $chatRef->set([
+                    'jobId'           => $app['jobId'],
+                    'seekerUid'       => $app['seekerUid'],
+                    'employerUid'     => $uid,
+                    'applicationId'   => $request->applicationId,
+                    'lastMessage'     => null,
+                    'lastMessageAt'   => null,
+                    'unreadBySeeker'  => 0,
+                    'unreadByEmployer' => 0,
+                    'hiddenBy'        => [],
+                    'createdAt'       => FieldValue::serverTimestamp(),
+                    'updatedAt'       => FieldValue::serverTimestamp(),
+                ]);
+            }
+
+            $appRef->update([
+                ['path' => 'status',    'value' => $newStatus],
+                ['path' => 'chatId',    'value' => $chatId],
+                ['path' => 'updatedAt', 'value' => FieldValue::serverTimestamp()],
+            ]);
+
+            FcmNotifier::sendToUser(
+                $app['seekerUid'],
+                'Interview Offer',
+                'An employer wants to interview you!',
+                ['type' => 'status_change', 'status' => '2', 'applicationId' => $request->applicationId]
+            );
+        }
+
+        // HIRED (5): cascade-reject others, archive job
+        elseif ($newStatus === 5) {
+            $jobRef = $this->database->collection('jobs')->document($app['jobId']);
+
+            // Reject all other active applicants for this job
+            $otherApps = $this->database
+                ->collection('applications')
+                ->where('jobId', '=', $app['jobId'])
+                ->documents();
+
+            $rejectedUids = [];
+
+            foreach ($otherApps as $otherDoc) {
+                if (!$otherDoc->exists() || $otherDoc->id() === $request->applicationId) {
+                    continue;
+                }
+                $otherData = $otherDoc->data();
+                if (in_array($otherData['status'], [1, 2], true)) {
+                    $otherDoc->reference()->update([
+                        ['path' => 'status',       'value' => 3],
+                        ['path' => 'autoRejected',  'value' => true],
+                        ['path' => 'updatedAt',     'value' => FieldValue::serverTimestamp()],
+                    ]);
+                    $rejectedUids[] = $otherData['seekerUid'];
+                }
+            }
+
+            // Update hired application
+            $appRef->update([
+                ['path' => 'status',    'value' => $newStatus],
+                ['path' => 'updatedAt', 'value' => FieldValue::serverTimestamp()],
+            ]);
+
+            // Archive (fill) the job
+            $jobRef->update([
+                ['path' => 'filledAt',            'value' => FieldValue::serverTimestamp()],
+                ['path' => 'hiredApplicationId',   'value' => $request->applicationId],
+                ['path' => 'updatedAt',            'value' => FieldValue::serverTimestamp()],
+            ]);
+
+            // Notify hired seeker
+            FcmNotifier::sendToUser(
+                $app['seekerUid'],
+                'You got hired!',
+                'Congratulations! You have been hired.',
+                ['type' => 'status_change', 'status' => '5', 'applicationId' => $request->applicationId]
+            );
+
+            // Notify auto-rejected seekers
+            foreach (array_unique($rejectedUids) as $rejectedUid) {
+                FcmNotifier::sendToUser(
+                    $rejectedUid,
+                    'Application Update',
+                    'The position has been filled.',
+                    ['type' => 'status_change', 'status' => '3', 'applicationId' => $request->applicationId]
+                );
+            }
+        }
+
+        // REJECTED (3)
+        else {
+            $appRef->update([
+                ['path' => 'status',    'value' => $newStatus],
+                ['path' => 'updatedAt', 'value' => FieldValue::serverTimestamp()],
+            ]);
+
+            FcmNotifier::sendToUser(
+                $app['seekerUid'],
+                'Application Update',
+                'Your application status has been updated.',
+                ['type' => 'status_change', 'status' => (string) $newStatus, 'applicationId' => $request->applicationId]
+            );
+        }
+
+        // Re-read to return resolved timestamps
+        $updated = $appRef->snapshot()->data();
+        $updated['id'] = $request->applicationId;
 
         return response()->json([
             'message' => 'Application status updated successfully',
-            'data'    => [
-                'id'        => $request->applicationId,
-                'status'    => $newStatus,
-                'updatedAt' => FieldValue::serverTimestamp(),
-            ],
+            'data'    => $updated,
+        ], 200);
+    }
+
+    public function markComplete(Request $request)
+    {
+        $uid = $request->authUid;
+
+        validator($request->all(), [
+            'applicationId' => ['required', 'string'],
+        ])->validate();
+
+        $appRef  = $this->database->collection('applications')->document($request->applicationId);
+        $appSnap = $appRef->snapshot();
+
+        if (!$appSnap->exists()) {
+            return response()->json(['error' => 'Application not found'], 404);
+        }
+
+        $app = $appSnap->data();
+
+        if ($app['status'] !== 5) {
+            return response()->json(['error' => 'Only hired applications can be marked complete'], 422);
+        }
+
+        $jobSnap = $this->database->collection('jobs')->document($app['jobId'])->snapshot();
+
+        if (!$jobSnap->exists()) {
+            return response()->json(['error' => 'Job not found'], 404);
+        }
+
+        $job = $jobSnap->data();
+
+        $isSeeker   = $app['seekerUid'] === $uid;
+        $isEmployer = $job['employer'] === $uid;
+
+        if (!$isSeeker && !$isEmployer) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        $updates = [['path' => 'updatedAt', 'value' => FieldValue::serverTimestamp()]];
+
+        if ($isSeeker && ($app['seekerCompletedAt'] ?? null) === null) {
+            $updates[] = ['path' => 'seekerCompletedAt', 'value' => FieldValue::serverTimestamp()];
+        } elseif ($isEmployer && ($app['employerCompletedAt'] ?? null) === null) {
+            $updates[] = ['path' => 'employerCompletedAt', 'value' => FieldValue::serverTimestamp()];
+        } else {
+            return response()->json(['error' => 'Already marked as complete'], 422);
+        }
+
+        $appRef->update($updates);
+
+        // Re-check if both sides have now completed
+        $fresh = $appRef->snapshot()->data();
+        $bothDone = ($fresh['seekerCompletedAt'] ?? null) !== null
+                 && ($fresh['employerCompletedAt'] ?? null) !== null;
+
+        if ($bothDone) {
+            $appRef->update([
+                ['path' => 'status',    'value' => 6],
+                ['path' => 'updatedAt', 'value' => FieldValue::serverTimestamp()],
+            ]);
+
+            FcmNotifier::sendToUser(
+                $app['seekerUid'],
+                'Job Completed',
+                'Your job is complete! Rate your experience.',
+                ['type' => 'status_change', 'status' => '6', 'applicationId' => $request->applicationId]
+            );
+            FcmNotifier::sendToUser(
+                $job['employer'],
+                'Job Completed',
+                'Your job is complete! Rate your worker.',
+                ['type' => 'status_change', 'status' => '6', 'applicationId' => $request->applicationId]
+            );
+        }
+
+        $result = $appRef->snapshot()->data();
+        $result['id'] = $request->applicationId;
+
+        return response()->json([
+            'message' => 'Marked as complete',
+            'data'    => $result,
         ], 200);
     }
 }

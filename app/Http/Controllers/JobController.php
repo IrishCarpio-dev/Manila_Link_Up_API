@@ -38,26 +38,37 @@ class JobController extends Controller
         validator($request->all(), [
             'title'       => ['required', 'string', 'max:255'],
             'description' => ['required', 'string', 'max:5000'],
-            'expiresAt'      => ['required', 'date'],
+            'expiresAt'   => ['required', 'date'],
             'duration'    => ['required', 'regex:/^\d+\s+(hour|day|week|month|year)\(s\)$/i'],
             'salary'      => ['required', 'numeric', 'min:0'],
             'location'    => ['required', 'string', 'max:255'],
+            'tags'        => ['sometimes', 'array', 'max:10'],
+            'tags.*'      => ['string', 'max:40'],
         ])->validate();
 
-        $expiryDate = Carbon::parse($request->expiresAt)->toDateTimeImmutable();
+        $expiryDate      = Carbon::parse($request->expiresAt)->toDateTimeImmutable();
         $expiryTimestamp = new Timestamp($expiryDate);
 
+        $rawTags = $request->input('tags', []);
+        $tags    = array_values(array_unique(array_map(
+            fn($t) => preg_replace('/[^a-z0-9\-]/', '', strtolower(trim($t))),
+            $rawTags
+        )));
+
         $jobData = [
-            'title'       => $request->title,
-            'description' => $request->description,
-            'employer'    => $uid,
-            'expiresAt'   => $expiryTimestamp,
-            'duration'    => $request->duration,
-            'salary'      => (float) $request->salary,
-            'location'    => $request->location,
-            'deletedAt'   => null,
-            'createdAt'   => FieldValue::serverTimestamp(),
-            'updatedAt'   => FieldValue::serverTimestamp(),
+            'title'               => $request->title,
+            'description'         => $request->description,
+            'employer'            => $uid,
+            'expiresAt'           => $expiryTimestamp,
+            'duration'            => $request->duration,
+            'salary'              => (float) $request->salary,
+            'location'            => $request->location,
+            'tags'                => $tags,
+            'deletedAt'           => null,
+            'filledAt'            => null,
+            'hiredApplicationId'  => null,
+            'createdAt'           => FieldValue::serverTimestamp(),
+            'updatedAt'           => FieldValue::serverTimestamp(),
         ];
 
         $docRef = $this->database
@@ -75,13 +86,13 @@ class JobController extends Controller
     public function destroy(Request $request)
     {
         $uid = $request->authUid;
-        $id = $request->jobId;
+        $id  = $request->jobId;
 
         if (!$uid) {
             return response()->json(['error' => 'UID not found'], 400);
         }
 
-        $docRef = $this->database->collection('jobs')->document($id);
+        $docRef   = $this->database->collection('jobs')->document($id);
         $snapshot = $docRef->snapshot();
 
         if (!$snapshot->exists()) {
@@ -116,24 +127,39 @@ class JobController extends Controller
             'minSalary'     => ['sometimes', 'numeric', 'min:0'],
             'maxSalary'     => ['sometimes', 'numeric', 'min:0'],
             'startAfter'    => ['sometimes', 'string'],
+            'tags'          => ['sometimes', 'array', 'max:10'],
+            'tags.*'        => ['string'],
         ])->validate();
+
+        $hasSalaryRange = $request->filled('minSalary') || $request->filled('maxSalary');
+        $hasTags        = $request->filled('tags') && count($request->input('tags', [])) > 0;
+
+        if ($hasSalaryRange && $hasTags) {
+            return response()->json([
+                'error' => 'Cannot filter by salary range and tags simultaneously due to Firestore index constraints',
+            ], 422);
+        }
 
         $query = $this->database->collection('jobs');
 
         $nowTimestamp = new Timestamp(Carbon::now()->toDateTimeImmutable());
         $query = $query->where('deletedAt', '=', null);
+        $query = $query->where('filledAt',  '=', null);
         $query = $query->where('expiresAt', '>', $nowTimestamp);
 
-        $sortBy = $request->input('sortBy', 'createdAt');
+        $sortBy        = $request->input('sortBy', 'createdAt');
         $sortDirection = $request->input('sortDirection', 'desc');
 
-        // Equality filters
         if ($request->filled('employer')) {
             $query = $query->where('employer', '=', $request->employer);
         }
 
-        // Range filters — Firestore requires range-filtered field to be the first orderBy
-        if ($request->filled('minSalary') || $request->filled('maxSalary')) {
+        if ($hasTags) {
+            $tags  = $request->input('tags');
+            $query = $query->where('tags', 'array-contains-any', $tags);
+        }
+
+        if ($hasSalaryRange) {
             $sortBy = 'salary';
             if ($request->filled('minSalary')) {
                 $query = $query->where('salary', '>=', (float) $request->minSalary);
@@ -147,8 +173,8 @@ class JobController extends Controller
         if ($sortBy !== 'expiresAt') {
             $query = $query->orderBy('expiresAt', 'asc');
         }
+        $query = $query->orderBy('__name__', 'asc');
 
-        // Cursor-based pagination
         if ($request->filled('startAfter')) {
             $startAfterValue = $request->startAfter;
 
@@ -161,21 +187,20 @@ class JobController extends Controller
             $query = $query->startAfter([$startAfterValue]);
         }
 
-        $perPage = (int) $request->input('limit', 15);
-        $query = $query->limit($perPage);
-
+        $perPage   = (int) $request->input('limit', 15);
+        $query     = $query->limit($perPage);
         $documents = $query->documents();
-        $jobs = [];
+        $jobs      = [];
 
         foreach ($documents as $doc) {
             if ($doc->exists()) {
-                $data = $doc->data();
+                $data       = $doc->data();
                 $data['id'] = $doc->id();
-                $jobs[] = $data;
+                $jobs[]     = $data;
             }
         }
 
-        $employerUids = array_unique(array_column($jobs, 'employer'));
+        $employerUids    = array_unique(array_column($jobs, 'employer'));
         $employerProfiles = [];
         foreach ($employerUids as $employerUid) {
             $snap = $this->database

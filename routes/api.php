@@ -12,6 +12,8 @@ use App\Http\Controllers\EmployerController;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\JobController;
 use App\Http\Controllers\ApplicationController;
+use App\Http\Controllers\ServiceTagController;
+use App\Http\Controllers\SeekerPreferencesController;
 
 // This is your test route
 Route::get('/test-firebase', function (Database $database) {
@@ -32,6 +34,7 @@ Route::middleware([FirebaseAuthMiddleware::class])->group(function () {
     // Seeker
     Route::post('/seeker/signup', [SeekerController::class, 'signUp']);
     Route::post('/seeker/setupProfile', [SeekerController::class, 'setupProfile']);
+    Route::post('/seeker/preferences', [SeekerPreferencesController::class, 'upsert']);
 
     // Employer
     Route::post('/employer/signup', [EmployerController::class, 'signUp']);
@@ -51,4 +54,7 @@ Route::middleware([FirebaseAuthMiddleware::class])->group(function () {
     // Applications
     Route::post('/seeker/appliedJobs', [ApplicationController::class, 'seekerApplications']);
     Route::post('/applications/updateStatus', [ApplicationController::class, 'updateStatus']);
+
+    // Service Tags
+    Route::get('/service-tags', [ServiceTagController::class, 'index']);
 });

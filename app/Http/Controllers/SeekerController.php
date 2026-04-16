@@ -91,20 +91,23 @@ class SeekerController extends Controller
             'address'     => ['required', 'string', 'max:255'],
             'location'    => ['required', 'string', 'max:255'],
             'profilePhoto' => [
-                'file',
-                'image|mimes:jpeg,png,jpg',
+                'file', 
+                'image',
+                'mimes:jpeg,png,jpg', 
                 'max:2048'
             ],
             'validId' => [
                 'required',
                 'file',
-                'image|mimes:jpeg,png,jpg',
+                'image',
+                'mimes:jpeg,png,jpg',
                 'max:5120'
             ],
             'clearance' => [
                 'required',
                 'file',
-                'image|mimes:jpeg,png,jpg',
+                'image',
+                'mimes:jpeg,png,jpg',
                 'max:5120'
             ]
         ])->validate();

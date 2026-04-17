@@ -142,9 +142,10 @@ class JobController extends Controller
         }
 
         validator($request->all(), [
-            'mode'       => ['sometimes', 'string', 'in:curated,all'],
-            'limit'      => ['sometimes', 'integer', 'min:1', 'max:50'],
-            'startAfter' => ['sometimes', 'string'],
+            'mode'               => ['sometimes', 'string', 'in:curated,all'],
+            'limit'              => ['sometimes', 'integer', 'min:1', 'max:50'],
+            'startAfter'         => ['sometimes', 'string'],
+            'startAfterCreatedAt' => ['sometimes', 'string'],
         ])->validate();
 
         $mode    = $request->input('mode', 'curated');
@@ -177,12 +178,18 @@ class JobController extends Controller
         }
 
         $query = $query
-            ->orderBy('expiresAt', 'asc')
-            ->orderBy('createdAt', 'desc');
+            ->orderBy('createdAt', 'desc')
+            ->orderBy('expiresAt', 'asc');
 
         if ($request->filled('startAfter')) {
-            $cursor = new Timestamp(Carbon::parse($request->startAfter)->toDateTimeImmutable());
-            $query  = $query->startAfter([$cursor]);
+            $expiresAtCursor  = new Timestamp(Carbon::parse($request->startAfter)->toDateTimeImmutable());
+            $createdAtCursor  = $request->filled('startAfterCreatedAt')
+                ? new Timestamp(Carbon::parse($request->startAfterCreatedAt)->toDateTimeImmutable())
+                : null;
+            $cursorValues = $createdAtCursor
+                ? [$expiresAtCursor, $createdAtCursor]
+                : [$expiresAtCursor];
+            $query = $query->startAfter($cursorValues);
         }
 
         $applyPhpFilters = $phpSalaryFilter || $phpLocationFilter;
@@ -222,9 +229,24 @@ class JobController extends Controller
         }
         unset($job);
 
+        $hasMore    = count($jobs) >= $perPage;
+        $lastJob    = !empty($jobs) ? end($jobs) : null;
+        $nextCursor = ($hasMore && $lastJob)
+            ? [
+                'expiresAt' => $lastJob['expiresAt'] instanceof Timestamp
+                    ? $lastJob['expiresAt']->get()->format('c')
+                    : $lastJob['expiresAt'],
+                'createdAt' => $lastJob['createdAt'] instanceof Timestamp
+                    ? $lastJob['createdAt']->get()->format('c')
+                    : $lastJob['createdAt'],
+            ]
+            : null;
+
         return response()->json([
-            'message' => 'Jobs retrieved successfully',
-            'data'    => $jobs,
+            'message'    => 'Jobs retrieved successfully',
+            'data'       => $jobs,
+            'hasMore'    => $hasMore,
+            'nextCursor' => $nextCursor,
         ], 200);
     }
 
@@ -284,7 +306,6 @@ class JobController extends Controller
         if ($sortBy !== 'expiresAt') {
             $query = $query->orderBy('expiresAt', 'asc');
         }
-        $query = $query->orderBy('__name__', 'asc');
 
         if ($request->filled('startAfter')) {
             $startAfterValue = $request->startAfter;

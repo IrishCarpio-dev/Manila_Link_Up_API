@@ -42,14 +42,18 @@ class SeekerController extends Controller
         validator($request->all(), [
             'email'        => ['required', 'email', 'max:255'],
             'firstName'    => ['required', 'string', 'max:255'],
+            'middleName'   => ['nullable', 'string', 'max:255'],
             'lastName'     => ['required', 'string', 'max:255'],
+            'suffix'       => ['nullable', 'string', 'max:50'],
             'mobileNumber' => ['required', 'string', 'max:20'],
         ])->validate();
 
         $newElement = [
             'email' => $request->email,
             'firstName' => $request->firstName,
+            'middleName' => $request->middleName ?? null,
             'lastName' => $request->lastName,
+            'suffix' => $request->suffix ?? null,
             'mobileNumber' => $request->mobileNumber,
             'isOpenForWork' => FALSE,
             'isVerified' => FALSE,

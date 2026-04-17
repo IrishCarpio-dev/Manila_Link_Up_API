@@ -55,8 +55,6 @@ Route::middleware([FirebaseAuthMiddleware::class])->group(function () {
     Route::post('/seeker/appliedJobs',      [ApplicationController::class, 'seekerApplications']);
     Route::post('/applications/updateStatus',  [ApplicationController::class, 'updateStatus']);
     Route::post('/applications/markComplete',  [ApplicationController::class, 'markComplete']);
-    Route::post('/seeker/appliedJobs', [ApplicationController::class, 'seekerApplications']);
-    Route::post('/applications/updateStatus', [ApplicationController::class, 'updateStatus']);
 
     // Chat
     Route::post('/chats/list',     [ChatController::class, 'list']);

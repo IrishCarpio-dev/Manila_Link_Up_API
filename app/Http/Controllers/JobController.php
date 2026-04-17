@@ -152,7 +152,7 @@ class JobController extends Controller
 
         $preferences   = $seekerData['preferences'] ?? [];
         $prefTags      = $preferences['tags'] ?? [];
-        $prefSalary    = isset($preferences['preferredSalary']) ? (float) $preferences['preferredSalary'] : null;
+        $prefSalary    = isset($preferences['preferredSalary']) ? (integer) $preferences['preferredSalary'] : null;
         $prefLocation  = $preferences['preferredLocation'] ?? null;
 
         $nowTimestamp = new Timestamp(Carbon::now()->toDateTimeImmutable());
@@ -165,18 +165,20 @@ class JobController extends Controller
         $phpLocationFilter = $mode === 'curated' && !empty($prefLocation);
 
         if ($mode === 'curated') {
+            $phpSalaryFilter = $prefSalary !== null;
+
             if (!empty($prefTags)) {
                 $query = $query->where('tags', 'array-contains-any', $prefTags);
-                $phpSalaryFilter = $prefSalary !== null;
-            } elseif ($prefSalary !== null) {
+            } 
+            
+            if ($phpSalaryFilter) {
                 $query = $query->where('salary', '>=', $prefSalary);
             }
         }
 
         $query = $query
-            ->orderBy('createdAt', 'desc')
             ->orderBy('expiresAt', 'asc')
-            ->orderBy('__name__', 'asc');
+            ->orderBy('createdAt', 'desc');
 
         if ($request->filled('startAfter')) {
             $cursor = new Timestamp(Carbon::parse($request->startAfter)->toDateTimeImmutable());

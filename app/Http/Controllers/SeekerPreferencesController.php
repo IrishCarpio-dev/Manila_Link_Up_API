@@ -55,20 +55,20 @@ class SeekerPreferencesController extends Controller
             'preferredSalary'   => 'sometimes|numeric|min:0',
             'preferredDuration' => 'sometimes|string|max:100',
             'preferredLocation' => 'sometimes|string|max:255',
-            'serviceTags'       => 'sometimes|array|max:10',
-            'serviceTags.*'     => 'sometimes|string',
+            'tags'              => 'sometimes|array|max:10',
+            'tags.*'            => 'sometimes|string',
         ]);
 
-        if ($request->has('serviceTags')) {
-            foreach ($request->serviceTags as $tagId) {
+        if ($request->has('tags')) {
+            foreach ($request->tags as $tagId) {
                 $tagSnap = $this->database->collection('serviceTags')->document($tagId)->snapshot();
 
                 if (!$tagSnap->exists()) {
-                    return response()->json(['error' => "Service tag '{$tagId}' not found"], 422);
+                    return response()->json(['error' => "Tag '{$tagId}' not found"], 422);
                 }
 
                 if (!($tagSnap->data()['isActive'] ?? false)) {
-                    return response()->json(['error' => "Service tag '{$tagId}' is inactive"], 422);
+                    return response()->json(['error' => "Tag '{$tagId}' is inactive"], 422);
                 }
             }
         }
@@ -84,8 +84,8 @@ class SeekerPreferencesController extends Controller
         if ($request->filled('preferredLocation')) {
             $updates[] = ['path' => 'preferences.preferredLocation', 'value' => $request->preferredLocation];
         }
-        if ($request->has('serviceTags')) {
-            $updates[] = ['path' => 'preferences.serviceTags', 'value' => $request->serviceTags];
+        if ($request->has('tags')) {
+            $updates[] = ['path' => 'preferences.tags', 'value' => $request->tags];
         }
 
         if (empty($updates)) {

@@ -55,7 +55,7 @@ class SeekerController extends Controller
             'lastName' => $request->lastName,
             'suffix' => $request->suffix ?? null,
             'mobileNumber' => $request->mobileNumber,
-            'isOpenForWork' => FALSE,
+            'isOpenForWork' => true,
             'isVerified' => FALSE,
             'isProfileSet' => FALSE,
             'createdAt' => FieldValue::serverTimestamp(),

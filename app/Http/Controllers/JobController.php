@@ -121,6 +121,111 @@ class JobController extends Controller
         return response()->json(['message' => 'Job deleted successfully'], 200);
     }
 
+    public function seekerJobs(Request $request)
+    {
+        $uid = $request->authUid;
+
+        if (!$uid) {
+            return response()->json(['error' => 'UID not found'], 400);
+        }
+
+        $seekerSnap = $this->database->collection('seekers')->document($uid)->snapshot();
+
+        if (!$seekerSnap->exists()) {
+            return response()->json(['error' => 'Only seekers can access this endpoint'], 403);
+        }
+
+        $seekerData = $seekerSnap->data();
+
+        if (!($seekerData['isProfileSet'] ?? false)) {
+            return response()->json(['error' => 'Profile must be set up before browsing jobs'], 403);
+        }
+
+        validator($request->all(), [
+            'mode'       => ['sometimes', 'string', 'in:curated,all'],
+            'limit'      => ['sometimes', 'integer', 'min:1', 'max:50'],
+            'startAfter' => ['sometimes', 'string'],
+        ])->validate();
+
+        $mode    = $request->input('mode', 'curated');
+        $perPage = (int) $request->input('limit', 15);
+
+        $preferences   = $seekerData['preferences'] ?? [];
+        $prefTags      = $preferences['tags'] ?? [];
+        $prefSalary    = isset($preferences['preferredSalary']) ? (float) $preferences['preferredSalary'] : null;
+        $prefLocation  = $preferences['preferredLocation'] ?? null;
+
+        $nowTimestamp = new Timestamp(Carbon::now()->toDateTimeImmutable());
+        $query = $this->database->collection('jobs')
+            ->where('deletedAt', '=', null)
+            ->where('filledAt',  '=', null)
+            ->where('expiresAt', '>', $nowTimestamp);
+
+        $phpSalaryFilter   = false;
+        $phpLocationFilter = $mode === 'curated' && !empty($prefLocation);
+
+        if ($mode === 'curated') {
+            if (!empty($prefTags)) {
+                $query = $query->where('tags', 'array-contains-any', $prefTags);
+                $phpSalaryFilter = $prefSalary !== null;
+            } elseif ($prefSalary !== null) {
+                $query = $query->where('salary', '>=', $prefSalary);
+            }
+        }
+
+        $query = $query
+            ->orderBy('createdAt', 'desc')
+            ->orderBy('expiresAt', 'asc')
+            ->orderBy('__name__', 'asc');
+
+        if ($request->filled('startAfter')) {
+            $cursor = new Timestamp(Carbon::parse($request->startAfter)->toDateTimeImmutable());
+            $query  = $query->startAfter([$cursor]);
+        }
+
+        $applyPhpFilters = $phpSalaryFilter || $phpLocationFilter;
+        $fetchLimit      = $applyPhpFilters ? min($perPage * 2, 100) : $perPage;
+        $documents       = $query->limit($fetchLimit)->documents();
+
+        $jobs = [];
+        foreach ($documents as $doc) {
+            if ($doc->exists()) {
+                $data       = $doc->data();
+                $data['id'] = $doc->id();
+                $jobs[]     = $data;
+            }
+        }
+
+        if ($applyPhpFilters) {
+            $jobs = array_values(array_filter($jobs, function ($job) use ($phpSalaryFilter, $prefSalary, $phpLocationFilter, $prefLocation) {
+                if ($phpSalaryFilter && isset($job['salary']) && (float) $job['salary'] < $prefSalary) {
+                    return false;
+                }
+                if ($phpLocationFilter && ($job['location'] ?? null) !== $prefLocation) {
+                    return false;
+                }
+                return true;
+            }));
+            $jobs = array_slice($jobs, 0, $perPage);
+        }
+
+        $employerUids     = array_unique(array_column($jobs, 'employer'));
+        $employerProfiles = [];
+        foreach ($employerUids as $employerUid) {
+            $snap = $this->database->collection('employers')->document($employerUid)->snapshot();
+            $employerProfiles[$employerUid] = $snap->exists() ? $snap->data() : null;
+        }
+        foreach ($jobs as &$job) {
+            $job['employer'] = $employerProfiles[$job['employer']] ?? null;
+        }
+        unset($job);
+
+        return response()->json([
+            'message' => 'Jobs retrieved successfully',
+            'data'    => $jobs,
+        ], 200);
+    }
+
     public function index(Request $request)
     {
         validator($request->all(), [

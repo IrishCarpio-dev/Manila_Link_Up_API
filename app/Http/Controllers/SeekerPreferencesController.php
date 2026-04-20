@@ -53,7 +53,6 @@ class SeekerPreferencesController extends Controller
 
         $request->validate([
             'preferredSalary'   => 'sometimes|numeric|min:0',
-            'preferredDuration' => 'sometimes|string|max:100',
             'preferredLocation' => 'sometimes|string|max:255',
             'tags'              => 'sometimes|array|max:10',
             'tags.*'            => 'sometimes|string',
@@ -77,9 +76,6 @@ class SeekerPreferencesController extends Controller
 
         if ($request->filled('preferredSalary')) {
             $updates[] = ['path' => 'preferences.preferredSalary', 'value' => (float) $request->preferredSalary];
-        }
-        if ($request->filled('preferredDuration')) {
-            $updates[] = ['path' => 'preferences.preferredDuration', 'value' => $request->preferredDuration];
         }
         if ($request->filled('preferredLocation')) {
             $updates[] = ['path' => 'preferences.preferredLocation', 'value' => $request->preferredLocation];

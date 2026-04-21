@@ -86,14 +86,18 @@ class RatingController extends Controller
                 return response()->json(['error' => 'Rating can no longer be edited after 24 hours'], 422);
             }
 
+            $scoreDelta = (int) $request->score - (int) $existingData['score'];
+
             $existingDoc->reference()->update([
                 ['path' => 'score',     'value' => (int) $request->score],
                 ['path' => 'comment',   'value' => $request->input('comment', '')],
                 ['path' => 'updatedAt', 'value' => FieldValue::serverTimestamp()],
             ]);
 
-            $result        = $existingDoc->reference()->snapshot()->data();
-            $result['id']  = $existingDoc->id();
+            $this->syncUserRatingStats($rateeUid, $rateeRole, $scoreDelta, false);
+
+            $result       = $existingDoc->reference()->snapshot()->data();
+            $result['id'] = $existingDoc->id();
 
             return response()->json([
                 'message' => 'Rating updated successfully',
@@ -115,8 +119,10 @@ class RatingController extends Controller
             'updatedAt'     => FieldValue::serverTimestamp(),
         ];
 
-        $docRef        = $this->database->collection('ratings')->add($ratingData);
+        $docRef           = $this->database->collection('ratings')->add($ratingData);
         $ratingData['id'] = $docRef->id();
+
+        $this->syncUserRatingStats($rateeUid, $rateeRole, (int) $request->score, true);
 
         FcmNotifier::sendToUser(
             $rateeUid,
@@ -129,6 +135,45 @@ class RatingController extends Controller
             'message' => 'Rating submitted successfully',
             'data'    => $ratingData,
         ], 201);
+    }
+
+    private function computeBayesianAvg(int $count, float $sum, float $globalMean): float
+    {
+        $C = 5;
+        return round(($C * $globalMean + $sum) / ($C + $count), 2);
+    }
+
+    private function syncUserRatingStats(string $rateeUid, string $rateeRole, int $scoreDelta, bool $isNew): void
+    {
+        $collection = $rateeRole === 'seeker' ? 'seekers' : 'employers';
+        $userRef    = $this->database->collection($collection)->document($rateeUid);
+        $userData   = $userRef->snapshot()->data() ?? [];
+
+        $newCount = ($userData['ratingCount'] ?? 0) + ($isNew ? 1 : 0);
+        $newSum   = (float) ($userData['ratingSum'] ?? 0) + $scoreDelta;
+
+        $globalRef  = $this->database->collection('globalStats')->document('ratings');
+        $globalSnap = $globalRef->snapshot();
+        $globalData = $globalSnap->exists() ? ($globalSnap->data() ?? []) : [];
+
+        $countKey       = $rateeRole . 'Count';
+        $sumKey         = $rateeRole . 'Sum';
+        $newGlobalCount = ($globalData[$countKey] ?? 0) + ($isNew ? 1 : 0);
+        $newGlobalSum   = (float) ($globalData[$sumKey] ?? 0) + $scoreDelta;
+        $globalMean     = $newGlobalCount > 0 ? $newGlobalSum / $newGlobalCount : 0.0;
+
+        $bayesianAvg = $newCount > 0 ? $this->computeBayesianAvg($newCount, $newSum, $globalMean) : 0.0;
+
+        $userRef->update([
+            ['path' => 'ratingCount', 'value' => $newCount],
+            ['path' => 'ratingSum',   'value' => $newSum],
+            ['path' => 'bayesianAvg', 'value' => $bayesianAvg],
+        ]);
+
+        $globalRef->set([
+            $countKey => $newGlobalCount,
+            $sumKey   => $newGlobalSum,
+        ], ['merge' => true]);
     }
 
     public function list(Request $request)

@@ -27,8 +27,6 @@ Route::get('/test-firebase', function (Database $database) {
     return response()->json(['message' => 'Connected to Firebase! Check your console.']);
 });
 
-Route::post('/register-seeker', [AuthController::class, 'registerSeeker']);
-
 Route::middleware([FirebaseAuthMiddleware::class])->group(function () {
     // User
     Route::get('/user/profile', [UserController::class, 'profile']);

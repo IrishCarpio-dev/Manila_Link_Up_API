@@ -3,7 +3,6 @@
 namespace App\Providers;
 
 use Illuminate\Support\ServiceProvider;
-use Kreait\Firebase\Factory;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -12,10 +11,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        // Force Firestore to use REST transport to avoid gRPC infinite recursion in WSL2
-        $this->app->singleton(Factory::class, fn () => (new Factory())->withFirestoreClientConfig([
-            'transport' => 'rest',
-        ]));
+        // Force gRPC to use poll() instead of epoll1 — WSL2's epoll is unstable under gRPC
+        // and causes intermittent infinite recursion in CredentialsWrapper.
+        // Must be set before the first gRPC channel is created.
+        putenv('GRPC_POLL_STRATEGY=poll');
     }
 
     /**

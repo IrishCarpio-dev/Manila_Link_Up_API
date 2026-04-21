@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Google\Cloud\Firestore\FieldValue;
 use Kreait\Laravel\Firebase\Facades\Firebase;
 
@@ -53,7 +54,7 @@ class SeekerPreferencesController extends Controller
 
         $request->validate([
             'preferredSalary'   => 'sometimes|numeric|min:0',
-            'preferredLocation' => 'sometimes|string|max:255',
+            'preferredLocation' => ['sometimes', 'string', Rule::in(config('manila.districts'))],
             'tags'              => 'sometimes|array|max:10',
             'tags.*'            => 'sometimes|string',
         ]);

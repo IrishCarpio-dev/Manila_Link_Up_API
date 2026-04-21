@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Google\Cloud\Firestore\FieldValue;
 use Google\Cloud\Core\Timestamp;
 use Carbon\Carbon;
@@ -41,7 +42,7 @@ class JobController extends Controller
             'expiresAt'   => ['required', 'date'],
             'duration'    => ['required', 'regex:/^\d+\s+(hour|day|week|month|year)\(s\)$/i'],
             'salary'      => ['required', 'numeric', 'min:0'],
-            'location'    => ['required', 'string', 'max:255'],
+            'location'    => ['required', 'string', Rule::in(config('manila.districts'))],
             'tags'        => ['required', 'array', 'max:10'],
             'tags.*'      => ['string'],
         ])->validate();

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Google\Cloud\Firestore\FieldValue;
 use Google\Cloud\Core\Timestamp;
 use Carbon\Carbon;
@@ -84,7 +85,7 @@ class EmployerController extends Controller
 
         validator($request->all(), [
             'birthDate'    => ['required', 'date'],
-            'location'     => ['required', 'string', 'max:255'],
+            'location'     => ['required', 'string', Rule::in(config('manila.districts'))],
             'profilePhoto' => [
                 'file',
                 'image',

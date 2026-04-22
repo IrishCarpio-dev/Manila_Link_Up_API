@@ -280,14 +280,7 @@ class ApplicationController extends Controller
 
         foreach ($applications as &$app) {
             $seekerData = $seekers[$app['seekerUid']] ?? null;
-            $app['seeker'] = $seekerData ? [
-                'firstName'       => $seekerData['firstName'] ?? null,
-                'lastName'        => $seekerData['lastName'] ?? null,
-                'mobileNumber'    => $seekerData['mobileNumber'] ?? null,
-                'profilePhotoUrl' => $seekerData['profilePhotoUrl'] ?? null,
-                'isOpenForWork'   => $seekerData['isOpenForWork'] ?? null,
-                'isVerified'      => $seekerData['isVerified'] ?? null,
-            ] : null;
+            $app['seeker'] = $seekerData ?? null;
         }
         unset($app);
 

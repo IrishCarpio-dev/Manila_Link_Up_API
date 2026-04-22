@@ -11,10 +11,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        // Force gRPC to use poll() instead of epoll1 — WSL2's epoll is unstable under gRPC
-        // and causes intermittent infinite recursion in CredentialsWrapper.
-        // Must be set before the first gRPC channel is created.
-        putenv('GRPC_POLL_STRATEGY=poll');
+        //
     }
 
     /**

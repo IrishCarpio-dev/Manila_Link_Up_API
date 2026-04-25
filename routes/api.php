@@ -55,11 +55,9 @@ Route::middleware([FirebaseAuthMiddleware::class])->group(function () {
     Route::post('/applications/markComplete',  [ApplicationController::class, 'markComplete']);
 
     // Chat
-    Route::post('/chats/list',     [ChatController::class, 'list']);
-    Route::post('/chats/messages', [ChatController::class, 'messages']);
-    Route::post('/chats/send',     [ChatController::class, 'send']);
-    Route::post('/chats/markRead', [ChatController::class, 'markRead']);
-    Route::post('/chats/hide',     [ChatController::class, 'hide']);
+    Route::post('/chats/list',   [ChatController::class, 'list']);
+    Route::post('/chats/notify', [ChatController::class, 'notify']);
+    Route::post('/chats/hide',   [ChatController::class, 'hide']);
 
     // Ratings
     Route::post('/ratings',      [RatingController::class, 'submit']);

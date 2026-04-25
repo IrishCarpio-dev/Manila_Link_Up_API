@@ -126,14 +126,15 @@ class ChatController extends Controller
         return $chats;
     }
 
-    public function messages(Request $request)
+    public function notify(Request $request)
     {
         $uid = $request->authUid;
 
         validator($request->all(), [
-            'chatId'     => ['required', 'string'],
-            'limit'      => ['sometimes', 'integer', 'min:1', 'max:100'],
-            'startAfter' => ['sometimes', 'string'],
+            'chatId' => ['required', 'string'],
+            'title'  => ['required', 'string', 'max:200'],
+            'body'   => ['required', 'string', 'max:1000'],
+            'data'   => ['sometimes', 'array'],
         ])->validate();
 
         $chatSnap = $this->database->collection('chats')->document($request->chatId)->snapshot();
@@ -148,139 +149,16 @@ class ChatController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        $query = $this->database
-            ->collection('chats')
-            ->document($request->chatId)
-            ->collection('messages')
-            ->orderBy('createdAt', 'DESC');
-
-        if ($request->filled('startAfter')) {
-            $cursor = new Timestamp(Carbon::parse($request->startAfter)->toDateTimeImmutable());
-            $query  = $query->startAfter([$cursor]);
-        }
-
-        $perPage  = (int) $request->input('limit', 30);
-        $docs     = $query->limit($perPage)->documents();
-        $messages = [];
-
-        foreach ($docs as $doc) {
-            if ($doc->exists()) {
-                $data       = $doc->data();
-                $data['id'] = $doc->id();
-                $messages[] = $data;
-            }
-        }
-
-        return response()->json([
-            'message' => 'Messages retrieved successfully',
-            'data'    => $messages,
-        ], 200);
-    }
-
-    public function send(Request $request)
-    {
-        $uid = $request->authUid;
-
-        validator($request->all(), [
-            'chatId' => ['required', 'string'],
-            'text'   => ['required', 'string', 'max:2000'],
-        ])->validate();
-
-        $chatRef  = $this->database->collection('chats')->document($request->chatId);
-        $chatSnap = $chatRef->snapshot();
-
-        if (!$chatSnap->exists()) {
-            return response()->json(['error' => 'Chat not found'], 404);
-        }
-
-        $chat = $chatSnap->data();
-
-        if ($chat['seekerUid'] !== $uid && $chat['employerUid'] !== $uid) {
-            return response()->json(['error' => 'Unauthorized'], 403);
-        }
-
-        $isSeeker     = $chat['seekerUid'] === $uid;
-        $recipientUid = $isSeeker ? $chat['employerUid'] : $chat['seekerUid'];
-
-        $messageData = [
-            'senderUid' => $uid,
-            'text'      => $request->text,
-            'readAt'    => null,
-            'createdAt' => FieldValue::serverTimestamp(),
-        ];
-
-        $msgRef = $chatRef->collection('messages')->add($messageData);
-
-        $unreadField = $isSeeker ? 'unreadByEmployer' : 'unreadBySeeker';
-
-        $chatRef->update([
-            ['path' => 'lastMessage',   'value' => $request->text],
-            ['path' => 'lastMessageAt', 'value' => FieldValue::serverTimestamp()],
-            ['path' => $unreadField,    'value' => FieldValue::increment(1)],
-            // Remove recipient from hiddenBy so the chat resurfaces
-            ['path' => 'hiddenBy',      'value' => FieldValue::arrayRemove([$recipientUid])],
-            ['path' => 'updatedAt',     'value' => FieldValue::serverTimestamp()],
-        ]);
+        $recipientUid = ($chat['seekerUid'] === $uid) ? $chat['employerUid'] : $chat['seekerUid'];
 
         FcmNotifier::sendToUser(
             $recipientUid,
-            'New Message',
-            $request->text,
-            ['type' => 'chat_message', 'chatId' => $request->chatId, 'jobId' => $chat['jobId']]
+            $request->title,
+            $request->body,
+            $request->input('data', [])
         );
 
-        $messageData['id'] = $msgRef->id();
-
-        return response()->json([
-            'message' => 'Message sent successfully',
-            'data'    => $messageData,
-        ], 201);
-    }
-
-    public function markRead(Request $request)
-    {
-        $uid = $request->authUid;
-
-        validator($request->all(), [
-            'chatId' => ['required', 'string'],
-        ])->validate();
-
-        $chatRef  = $this->database->collection('chats')->document($request->chatId);
-        $chatSnap = $chatRef->snapshot();
-
-        if (!$chatSnap->exists()) {
-            return response()->json(['error' => 'Chat not found'], 404);
-        }
-
-        $chat = $chatSnap->data();
-
-        if ($chat['seekerUid'] !== $uid && $chat['employerUid'] !== $uid) {
-            return response()->json(['error' => 'Unauthorized'], 403);
-        }
-
-        $isSeeker    = $chat['seekerUid'] === $uid;
-        $unreadField = $isSeeker ? 'unreadBySeeker' : 'unreadByEmployer';
-
-        $chatRef->update([
-            ['path' => $unreadField, 'value' => 0],
-            ['path' => 'updatedAt',  'value' => FieldValue::serverTimestamp()],
-        ]);
-
-        // Mark individual unread messages as read
-        $unread = $chatRef->collection('messages')
-            ->where('senderUid', '!=', $uid)
-            ->where('readAt', '=', null)
-            ->documents();
-
-        foreach ($unread as $doc) {
-            if ($doc->exists()) {
-                $doc->reference()->update([
-                    ['path' => 'readAt', 'value' => FieldValue::serverTimestamp()],
-                ]);
-            }
-        }
-
-        return response()->json(['message' => 'Chat marked as read'], 200);
+        return response()->json(['message' => 'Notification sent'], 200);
     }
 
     public function hide(Request $request)

@@ -49,12 +49,19 @@ class ChatController extends Controller
         $perPage  = (int) $request->input('limit', 20);
         $allChats = array_slice(array_values($allChats), 0, $perPage);
 
-        // Batch-fetch counterpart profiles and job titles
+        // Batch-fetch counterpart profiles, job titles, and application statuses
         $jobIds      = array_unique(array_column($allChats, 'jobId'));
         $jobs        = [];
         foreach ($jobIds as $jobId) {
             $snap = $this->database->collection('jobs')->document($jobId)->snapshot();
             $jobs[$jobId] = $snap->exists() ? $snap->data() : null;
+        }
+
+        $applicationIds = array_unique(array_filter(array_column($allChats, 'applicationId')));
+        $applications   = [];
+        foreach ($applicationIds as $appId) {
+            $snap = $this->database->collection('applications')->document($appId)->snapshot();
+            $applications[$appId] = $snap->exists() ? $snap->data() : null;
         }
 
         $counterpartUids = [];
@@ -78,6 +85,8 @@ class ChatController extends Controller
             $cUid          = ($chat['seekerUid'] === $uid) ? $chat['employerUid'] : $chat['seekerUid'];
             $profile       = $profiles[$cUid] ?? null;
             $job           = $jobs[$chat['jobId']] ?? null;
+            $appId         = $chat['applicationId'] ?? null;
+            $application   = $appId ? ($applications[$appId] ?? null) : null;
 
             $chat['counterpart'] = $profile ? [
                 'uid'             => $cUid,
@@ -90,9 +99,11 @@ class ChatController extends Controller
                 'title' => $job['title'] ?? null,
             ] : null;
 
-            $chat['unreadCount'] = ($chat['seekerUid'] === $uid)
+            $chat['unreadCount']        = ($chat['seekerUid'] === $uid)
                 ? ($chat['unreadBySeeker'] ?? 0)
                 : ($chat['unreadByEmployer'] ?? 0);
+
+            $chat['applicationStatus'] = $application ? (int) $application['status'] : null;
         }
         unset($chat);
 

@@ -47,9 +47,14 @@ class JobController extends Controller
             'tags.*'      => ['string'],
         ])->validate();
 
+        $tagRefs    = array_map(fn($id) => $this->database->collection('serviceTags')->document($id), $request->tags);
+        $tagSnapMap = [];
+        foreach ($this->database->documents($tagRefs) as $snap) {
+            $tagSnapMap[$snap->id()] = $snap;
+        }
         foreach ($request->tags as $tagId) {
-            $tagSnap = $this->database->collection('serviceTags')->document($tagId)->snapshot();
-            if (!$tagSnap->exists()) {
+            $tagSnap = $tagSnapMap[$tagId] ?? null;
+            if (!$tagSnap || !$tagSnap->exists()) {
                 return response()->json(['error' => "Tag '{$tagId}' not found"], 422);
             }
             if (!($tagSnap->data()['isActive'] ?? false)) {
@@ -253,6 +258,8 @@ class JobController extends Controller
 
     public function index(Request $request)
     {
+        $uid = $request->authUid;
+
         validator($request->all(), [
             'limit'         => ['sometimes', 'integer', 'min:1', 'max:50'],
             'sortBy'        => ['sometimes', 'string', 'in:createdAt,salary,expiresAt'],
@@ -274,12 +281,18 @@ class JobController extends Controller
             ], 422);
         }
 
+        // Employer viewing their own jobs: show filled jobs too so hired applicants are visible
+        $isOwnerView = $uid && $request->input('employer') === $uid
+            && $this->database->collection('employers')->document($uid)->snapshot()->exists();
+
         $query = $this->database->collection('jobs');
 
         $nowTimestamp = new Timestamp(Carbon::now()->toDateTimeImmutable());
         $query = $query->where('deletedAt', '=', null);
-        $query = $query->where('filledAt',  '=', null);
-        $query = $query->where('expiresAt', '>', $nowTimestamp);
+        if (!$isOwnerView) {
+            $query = $query->where('filledAt', '=', null);
+            $query = $query->where('expiresAt', '>', $nowTimestamp);
+        }
 
         $sortBy        = $request->input('sortBy', 'createdAt');
         $sortDirection = $request->input('sortDirection', 'desc');
@@ -346,6 +359,45 @@ class JobController extends Controller
             $job['employer'] = $employerProfiles[$job['employer']] ?? null;
         }
         unset($job);
+
+        if ($isOwnerView) {
+            $hiredAppIds = array_filter(array_column($jobs, 'hiredApplicationId'));
+            $hiredApps   = [];
+            foreach (array_unique($hiredAppIds) as $appId) {
+                $snap = $this->database->collection('applications')->document($appId)->snapshot();
+                $hiredApps[$appId] = $snap->exists() ? array_merge($snap->data(), ['id' => $snap->id()]) : null;
+            }
+
+            $hiredSeekerUids = array_unique(array_filter(
+                array_map(fn($a) => $a['seekerUid'] ?? null, $hiredApps)
+            ));
+            $hiredSeekers = [];
+            foreach ($hiredSeekerUids as $seekerUid) {
+                $snap = $this->database->collection('seekers')->document($seekerUid)->snapshot();
+                $hiredSeekers[$seekerUid] = $snap->exists() ? $snap->data() : null;
+            }
+
+            foreach ($jobs as &$job) {
+                $appId = $job['hiredApplicationId'] ?? null;
+                $app   = $appId ? ($hiredApps[$appId] ?? null) : null;
+
+                if ($app && ($app['status'] ?? 0) >= 5) {
+                    $seekerData = $hiredSeekers[$app['seekerUid']] ?? null;
+                    $job['hiredApplication'] = [
+                        'id'                  => $app['id'],
+                        'status'              => $app['status'],
+                        'employerCompletedAt' => $app['employerCompletedAt'] ?? null,
+                        'seeker'              => $seekerData ? [
+                            'firstName' => $seekerData['firstName'] ?? null,
+                            'lastName'  => $seekerData['lastName']  ?? null,
+                        ] : null,
+                    ];
+                } else {
+                    $job['hiredApplication'] = null;
+                }
+            }
+            unset($job);
+        }
 
         return response()->json([
             'message' => 'Jobs retrieved successfully',

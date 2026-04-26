@@ -24,12 +24,11 @@ class SeekerPreferencesController extends Controller
             return response()->json(['error' => 'UID not found'], 400);
         }
 
-        $snap = $this->database->collection('seekers')->document($uid)->snapshot();
-
-        if (!$snap->exists()) {
+        if ($request->authRole !== 'seeker') {
             return response()->json(['error' => 'Seeker not found'], 404);
         }
 
+        $snap = $this->database->collection('seekers')->document($uid)->snapshot();
         $data = $snap->data();
 
         return response()->json([
@@ -46,11 +45,11 @@ class SeekerPreferencesController extends Controller
             return response()->json(['error' => 'UID not found'], 400);
         }
 
-        $seekerRef = $this->database->collection('seekers')->document($uid);
-
-        if (!$seekerRef->snapshot()->exists()) {
+        if ($request->authRole !== 'seeker') {
             return response()->json(['error' => 'Seeker not found'], 404);
         }
+
+        $seekerRef = $this->database->collection('seekers')->document($uid);
 
         $request->validate([
             'preferredSalary'   => 'sometimes|numeric|min:0',

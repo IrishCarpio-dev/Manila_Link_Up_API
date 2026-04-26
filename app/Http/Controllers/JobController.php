@@ -26,16 +26,6 @@ class JobController extends Controller
             return response()->json(['error' => 'UID not found'], 400);
         }
 
-        $isEmployer = $this->database
-            ->collection('employers')
-            ->document($uid)
-            ->snapshot()
-            ->exists();
-
-        if (!$isEmployer) {
-            return response()->json(['error' => 'Only employers can create jobs'], 403);
-        }
-
         validator($request->all(), [
             'title'       => ['required', 'string', 'max:255'],
             'description' => ['required', 'string', 'max:5000'],
@@ -46,6 +36,10 @@ class JobController extends Controller
             'tags'        => ['required', 'array', 'max:10'],
             'tags.*'      => ['string'],
         ])->validate();
+
+        if ($request->authRole !== 'employer') {
+            return response()->json(['error' => 'Only employers can create jobs'], 403);
+        }
 
         $tagRefs    = array_map(fn($id) => $this->database->collection('serviceTags')->document($id), $request->tags);
         $tagSnapMap = [];
@@ -135,12 +129,11 @@ class JobController extends Controller
             return response()->json(['error' => 'UID not found'], 400);
         }
 
-        $seekerSnap = $this->database->collection('seekers')->document($uid)->snapshot();
-
-        if (!$seekerSnap->exists()) {
+        if ($request->authRole !== 'seeker') {
             return response()->json(['error' => 'Only seekers can access this endpoint'], 403);
         }
 
+        $seekerSnap = $this->database->collection('seekers')->document($uid)->snapshot();
         $seekerData = $seekerSnap->data();
 
         if (!($seekerData['isProfileSet'] ?? false)) {
@@ -283,7 +276,7 @@ class JobController extends Controller
 
         // Employer viewing their own jobs: show filled jobs too so hired applicants are visible
         $isOwnerView = $uid && $request->input('employer') === $uid
-            && $this->database->collection('employers')->document($uid)->snapshot()->exists();
+            && $request->authRole === 'employer';
 
         $query = $this->database->collection('jobs');
 

@@ -68,6 +68,8 @@ class SeekerController extends Controller
             ->document($uid)
             ->set($newElement);
 
+        Firebase::auth()->setCustomUserClaims($uid, ['role' => 'seeker']);
+
         return response()->json([
             'message' => 'Seeker registered successfully',
             'data' => json_encode($newElement)

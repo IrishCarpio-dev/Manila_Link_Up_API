@@ -70,6 +70,7 @@ class JobController extends Controller
             'tags'                => $request->tags,
             'deletedAt'           => null,
             'filledAt'            => null,
+            'completedAt'         => null,
             'hiredApplicationId'  => null,
             'createdAt'           => FieldValue::serverTimestamp(),
             'updatedAt'           => FieldValue::serverTimestamp(),
@@ -157,24 +158,14 @@ class JobController extends Controller
 
         $nowTimestamp = new Timestamp(Carbon::now()->toDateTimeImmutable());
         $query = $this->database->collection('jobs')
-            ->where('deletedAt', '=', null)
-            ->where('filledAt',  '=', null)
-            ->where('expiresAt', '>', $nowTimestamp);
+            ->where('deletedAt',   '=', null)
+            ->where('filledAt',    '=', null)
+            ->where('completedAt', '=', null)
+            ->where('expiresAt',   '>', $nowTimestamp);
 
-        $completedJobIds = [];
-        $completedAppDocs = $this->database->collection('applications')
-            ->where('seekerUid', '=', $uid)
-            ->where('status', '=', 6)
-            ->documents();
-        foreach ($completedAppDocs as $doc) {
-            if ($doc->exists()) {
-                $completedJobIds[$doc->data()['jobId']] = true;
-            }
-        }
-
-        $phpSalaryFilter   = false;
-        $phpLocationFilter = $mode === 'curated' && !empty($prefLocation);
-        $phpCompletedFilter = !empty($completedJobIds);
+        $phpSalaryFilter    = false;
+        $phpLocationFilter  = $mode === 'curated' && !empty($prefLocation);
+        $phpCompletedFilter = false;
 
         if ($mode === 'curated') {
             $phpSalaryFilter = $prefSalary !== null;
@@ -217,14 +208,11 @@ class JobController extends Controller
         }
 
         if ($applyPhpFilters) {
-            $jobs = array_values(array_filter($jobs, function ($job) use ($phpSalaryFilter, $prefSalary, $phpLocationFilter, $prefLocation, $phpCompletedFilter, $completedJobIds) {
+            $jobs = array_values(array_filter($jobs, function ($job) use ($phpSalaryFilter, $prefSalary, $phpLocationFilter, $prefLocation) {
                 if ($phpSalaryFilter && isset($job['salary']) && (float) $job['salary'] < $prefSalary) {
                     return false;
                 }
                 if ($phpLocationFilter && ($job['location'] ?? null) !== $prefLocation) {
-                    return false;
-                }
-                if ($phpCompletedFilter && isset($completedJobIds[$job['id']])) {
                     return false;
                 }
                 return true;
@@ -407,7 +395,8 @@ class JobController extends Controller
         $query = $this->database->collection('jobs');
 
         $nowTimestamp = new Timestamp(Carbon::now()->toDateTimeImmutable());
-        $query = $query->where('deletedAt', '=', null);
+        $query = $query->where('deletedAt',   '=', null)
+                       ->where('completedAt', '=', null);
         if (!$isOwnerView) {
             $query = $query->where('filledAt', '=', null);
             $query = $query->where('expiresAt', '>', $nowTimestamp);

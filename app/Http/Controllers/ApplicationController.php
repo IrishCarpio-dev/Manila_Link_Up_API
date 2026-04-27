@@ -501,6 +501,11 @@ class ApplicationController extends Controller
                 ['path' => 'updatedAt', 'value' => FieldValue::serverTimestamp()],
             ]);
 
+            $this->database->collection('jobs')->document($app['jobId'])->update([
+                ['path' => 'completedAt', 'value' => FieldValue::serverTimestamp()],
+                ['path' => 'updatedAt',   'value' => FieldValue::serverTimestamp()],
+            ]);
+
             FcmNotifier::sendToUser(
                 $app['seekerUid'],
                 'Job Completed',

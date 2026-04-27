@@ -17,6 +17,7 @@ use App\Http\Controllers\RatingController;
 use App\Http\Controllers\DeviceController;
 use App\Http\Controllers\ServiceTagController;
 use App\Http\Controllers\SeekerPreferencesController;
+use App\Http\Controllers\NotificationController;
 
 Route::get('/test-firebase', function (Database $database) {
     $database->getReference('test_connection')->set([
@@ -67,8 +68,14 @@ Route::middleware([FirebaseAuthMiddleware::class])->group(function () {
     Route::post('/devices/register',   [DeviceController::class, 'register']);
     Route::post('/devices/unregister', [DeviceController::class, 'unregister']);
 
+    // Notifications
+    Route::post('/notifications/list',      [NotificationController::class, 'list']);
+    Route::post('/notifications/markRead',  [NotificationController::class, 'markRead']);
+    Route::get('/notifications/unreadCount', [NotificationController::class, 'unreadCount']);
+
     // Admin
     Route::post('/admin/verifyUser',            [AdminController::class, 'verifyUser']);
+    Route::post('/admin/rejectVerification',    [AdminController::class, 'rejectVerification']);
     Route::get('/admin/analytics/overview',     [AdminController::class, 'analyticsOverview']);
     Route::get('/admin/analytics/tags',         [AdminController::class, 'analyticsTags']);
     Route::get('/admin/analytics/funnel',       [AdminController::class, 'analyticsFunnel']);

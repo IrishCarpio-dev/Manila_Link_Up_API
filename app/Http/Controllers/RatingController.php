@@ -7,7 +7,7 @@ use Google\Cloud\Firestore\FieldValue;
 use Google\Cloud\Core\Timestamp;
 use Carbon\Carbon;
 use Kreait\Laravel\Firebase\Facades\Firebase;
-use App\Services\FcmNotifier;
+use App\Services\NotificationService;
 
 class RatingController extends Controller
 {
@@ -124,11 +124,12 @@ class RatingController extends Controller
 
         $this->syncUserRatingStats($rateeUid, $rateeRole, (int) $request->score, true);
 
-        FcmNotifier::sendToUser(
+        NotificationService::notify(
             $rateeUid,
+            'rating_received',
             'New Rating',
             'You received a new rating!',
-            ['type' => 'rating_received', 'applicationId' => $request->applicationId]
+            ['applicationId' => $request->applicationId, 'jobId' => $app['jobId']]
         );
 
         return response()->json([

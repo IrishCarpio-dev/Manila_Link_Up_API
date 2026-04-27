@@ -8,6 +8,7 @@ use Google\Cloud\Firestore\FieldValue;
 use Google\Cloud\Core\Timestamp;
 use Carbon\Carbon;
 use Kreait\Laravel\Firebase\Facades\Firebase;
+use App\Services\NotificationService;
 
 class JobController extends Controller
 {
@@ -80,12 +81,43 @@ class JobController extends Controller
             ->collection('jobs')
             ->add($jobData);
 
-        $jobData['id'] = $docRef->id();
+        $jobId         = $docRef->id();
+        $jobData['id'] = $jobId;
+
+        $this->notifyMatchingSeekers($jobId, $request->title, $request->tags);
 
         return response()->json([
             'message' => 'Job created successfully',
             'data'    => $jobData
         ], 201);
+    }
+
+    private function notifyMatchingSeekers(string $jobId, string $jobTitle, array $tags): void
+    {
+        if (empty($tags)) {
+            return;
+        }
+
+        $seekerDocs = $this->database
+            ->collection('seekers')
+            ->where('preferences.tags', 'array-contains-any', $tags)
+            ->where('isVerified',   '=', true)
+            ->where('isProfileSet', '=', true)
+            ->documents();
+
+        foreach ($seekerDocs as $doc) {
+            if (!$doc->exists()) {
+                continue;
+            }
+
+            NotificationService::notify(
+                $doc->id(),
+                'new_matching_job',
+                'New Job for You',
+                'A new job matching your skills was just posted: "' . $jobTitle . '".',
+                ['jobId' => $jobId]
+            );
+        }
     }
 
     public function destroy(Request $request)

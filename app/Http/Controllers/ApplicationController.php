@@ -7,7 +7,7 @@ use Google\Cloud\Firestore\FieldValue;
 use Google\Cloud\Core\Timestamp;
 use Carbon\Carbon;
 use Kreait\Laravel\Firebase\Facades\Firebase;
-use App\Services\FcmNotifier;
+use App\Services\NotificationService;
 
 class ApplicationController extends Controller
 {
@@ -90,6 +90,14 @@ class ApplicationController extends Controller
 
         $docRef = $this->database->collection('applications')->add($appData);
         $appData['id'] = $docRef->id();
+
+        NotificationService::notify(
+            $job['employer'],
+            'new_applicant',
+            'New Applicant',
+            'Someone applied to your job "' . ($job['title'] ?? '') . '".',
+            ['jobId' => $request->jobId, 'applicationId' => $docRef->id()]
+        );
 
         return response()->json([
             'message' => 'Application submitted successfully',
@@ -359,11 +367,12 @@ class ApplicationController extends Controller
                 ['path' => 'updatedAt', 'value' => FieldValue::serverTimestamp()],
             ]);
 
-            FcmNotifier::sendToUser(
+            NotificationService::notify(
                 $app['seekerUid'],
+                'interview_offer',
                 'Interview Offer',
                 'An employer wants to interview you!',
-                ['type' => 'status_change', 'status' => '2', 'applicationId' => $request->applicationId]
+                ['applicationId' => $request->applicationId, 'jobId' => $app['jobId']]
             );
         }
 
@@ -408,20 +417,22 @@ class ApplicationController extends Controller
             ]);
 
             // Notify hired seeker
-            FcmNotifier::sendToUser(
+            NotificationService::notify(
                 $app['seekerUid'],
+                'hired',
                 'You got hired!',
                 'Congratulations! You have been hired.',
-                ['type' => 'status_change', 'status' => '5', 'applicationId' => $request->applicationId]
+                ['applicationId' => $request->applicationId, 'jobId' => $app['jobId']]
             );
 
             // Notify auto-rejected seekers
             foreach (array_unique($rejectedUids) as $rejectedUid) {
-                FcmNotifier::sendToUser(
+                NotificationService::notify(
                     $rejectedUid,
+                    'job_filled',
                     'Application Update',
-                    'The position has been filled.',
-                    ['type' => 'status_change', 'status' => '3', 'applicationId' => $request->applicationId]
+                    'The position has been filled. Keep looking!',
+                    ['jobId' => $app['jobId']]
                 );
             }
         }
@@ -433,11 +444,12 @@ class ApplicationController extends Controller
                 ['path' => 'updatedAt', 'value' => FieldValue::serverTimestamp()],
             ]);
 
-            FcmNotifier::sendToUser(
+            NotificationService::notify(
                 $app['seekerUid'],
+                'rejected',
                 'Application Update',
-                'Your application status has been updated.',
-                ['type' => 'status_change', 'status' => (string) $newStatus, 'applicationId' => $request->applicationId]
+                'Your application was not selected this time.',
+                ['applicationId' => $request->applicationId, 'jobId' => $app['jobId']]
             );
         }
 
@@ -510,17 +522,19 @@ class ApplicationController extends Controller
                 ['path' => 'updatedAt', 'value' => FieldValue::serverTimestamp()],
             ]);
 
-            FcmNotifier::sendToUser(
+            NotificationService::notify(
                 $app['seekerUid'],
+                'job_completed',
                 'Job Completed',
                 'Your job is complete! Rate your experience.',
-                ['type' => 'status_change', 'status' => '6', 'applicationId' => $request->applicationId]
+                ['applicationId' => $request->applicationId, 'jobId' => $app['jobId']]
             );
-            FcmNotifier::sendToUser(
+            NotificationService::notify(
                 $job['employer'],
+                'job_completed',
                 'Job Completed',
                 'Your job is complete! Rate your worker.',
-                ['type' => 'status_change', 'status' => '6', 'applicationId' => $request->applicationId]
+                ['applicationId' => $request->applicationId, 'jobId' => $app['jobId']]
             );
         }
 

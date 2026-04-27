@@ -41,16 +41,18 @@ Route::middleware([FirebaseAuthMiddleware::class])->group(function () {
     Route::post('/employer/setupProfile', [EmployerController::class, 'setupProfile']);
 
     // Jobs
-    Route::post('/jobs',         [JobController::class, 'store']);
-    Route::post('/jobs/list',    [JobController::class, 'index']);
-    Route::post('/jobs/archive', [JobController::class, 'destroy']);
-    Route::post('/seeker/jobs',  [JobController::class, 'seekerJobs']);
+    Route::post('/jobs',                  [JobController::class, 'store']);
+    Route::post('/jobs/list',             [JobController::class, 'index']);
+    Route::post('/jobs/archive',          [JobController::class, 'destroy']);
+    Route::post('/seeker/jobs',           [JobController::class, 'seekerJobs']);
+    Route::post('/employer/archivedJobs', [JobController::class, 'employerArchivedJobs']);
 
     // Applications
     Route::post('/jobs/apply',              [ApplicationController::class, 'apply']);
     Route::post('/jobs/withdraw',           [ApplicationController::class, 'withdraw']);
     Route::post('/jobs/applicants',         [ApplicationController::class, 'jobApplicants']);
     Route::post('/seeker/appliedJobs',      [ApplicationController::class, 'seekerApplications']);
+    Route::post('/seeker/completedJobs',   [ApplicationController::class, 'seekerCompletedJobs']);
     Route::post('/applications/updateStatus',  [ApplicationController::class, 'updateStatus']);
     Route::post('/applications/markComplete',  [ApplicationController::class, 'markComplete']);
 

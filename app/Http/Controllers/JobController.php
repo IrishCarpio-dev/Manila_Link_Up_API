@@ -161,8 +161,20 @@ class JobController extends Controller
             ->where('filledAt',  '=', null)
             ->where('expiresAt', '>', $nowTimestamp);
 
+        $completedJobIds = [];
+        $completedAppDocs = $this->database->collection('applications')
+            ->where('seekerUid', '=', $uid)
+            ->where('status', '=', 6)
+            ->documents();
+        foreach ($completedAppDocs as $doc) {
+            if ($doc->exists()) {
+                $completedJobIds[$doc->data()['jobId']] = true;
+            }
+        }
+
         $phpSalaryFilter   = false;
         $phpLocationFilter = $mode === 'curated' && !empty($prefLocation);
+        $phpCompletedFilter = !empty($completedJobIds);
 
         if ($mode === 'curated') {
             $phpSalaryFilter = $prefSalary !== null;
@@ -191,7 +203,7 @@ class JobController extends Controller
             $query = $query->startAfter($cursorValues);
         }
 
-        $applyPhpFilters = $phpSalaryFilter || $phpLocationFilter;
+        $applyPhpFilters = $phpSalaryFilter || $phpLocationFilter || $phpCompletedFilter;
         $fetchLimit      = $applyPhpFilters ? min($perPage * 2, 100) : $perPage;
         $documents       = $query->limit($fetchLimit)->documents();
 
@@ -205,11 +217,14 @@ class JobController extends Controller
         }
 
         if ($applyPhpFilters) {
-            $jobs = array_values(array_filter($jobs, function ($job) use ($phpSalaryFilter, $prefSalary, $phpLocationFilter, $prefLocation) {
+            $jobs = array_values(array_filter($jobs, function ($job) use ($phpSalaryFilter, $prefSalary, $phpLocationFilter, $prefLocation, $phpCompletedFilter, $completedJobIds) {
                 if ($phpSalaryFilter && isset($job['salary']) && (float) $job['salary'] < $prefSalary) {
                     return false;
                 }
                 if ($phpLocationFilter && ($job['location'] ?? null) !== $prefLocation) {
+                    return false;
+                }
+                if ($phpCompletedFilter && isset($completedJobIds[$job['id']])) {
                     return false;
                 }
                 return true;
@@ -246,6 +261,117 @@ class JobController extends Controller
             'data'       => $jobs,
             'hasMore'    => $hasMore,
             'nextCursor' => $nextCursor,
+        ], 200);
+    }
+
+    public function employerArchivedJobs(Request $request)
+    {
+        $uid = $request->authUid;
+
+        if (!$uid) {
+            return response()->json(['error' => 'UID not found'], 400);
+        }
+
+        if ($request->authRole !== 'employer') {
+            return response()->json(['error' => 'Only employers can access this endpoint'], 403);
+        }
+
+        validator($request->all(), [
+            'limit' => ['sometimes', 'integer', 'min:1', 'max:50'],
+        ])->validate();
+
+        $limit        = (int) $request->input('limit', 20);
+        $nowTimestamp = new Timestamp(Carbon::now()->toDateTimeImmutable());
+        // Epoch sentinel: any non-null server timestamp will be greater than this
+        $epoch        = new Timestamp(Carbon::createFromDate(2000, 1, 1)->toDateTimeImmutable());
+        $col          = $this->database->collection('jobs');
+        $seen         = [];
+        $allJobs      = [];
+
+        $queries = [
+            // Deleted (soft-archived) jobs — deletedAt is a timestamp, not null
+            $col->where('employer', '=', $uid)
+                ->where('deletedAt', '>', $epoch)
+                ->orderBy('deletedAt', 'desc')
+                ->limit($limit),
+
+            // Filled jobs (hired / completed) — not deleted
+            $col->where('employer', '=', $uid)
+                ->where('deletedAt', '=', null)
+                ->where('filledAt', '>', $epoch)
+                ->orderBy('filledAt', 'desc')
+                ->limit($limit),
+
+            // Expired jobs — not filled, not deleted
+            $col->where('employer', '=', $uid)
+                ->where('deletedAt', '=', null)
+                ->where('filledAt', '=', null)
+                ->where('expiresAt', '<', $nowTimestamp)
+                ->orderBy('expiresAt', 'desc')
+                ->limit($limit),
+        ];
+
+        foreach ($queries as $query) {
+            foreach ($query->documents() as $doc) {
+                if ($doc->exists() && !isset($seen[$doc->id()])) {
+                    $seen[$doc->id()] = true;
+                    $data             = $doc->data();
+                    $data['id']       = $doc->id();
+                    $allJobs[]        = $data;
+                }
+            }
+        }
+
+        // Batch-fetch hired applications
+        $hiredAppIds = array_unique(array_filter(array_column($allJobs, 'hiredApplicationId')));
+        $hiredApps   = [];
+        foreach ($hiredAppIds as $appId) {
+            $snap              = $this->database->collection('applications')->document($appId)->snapshot();
+            $hiredApps[$appId] = $snap->exists() ? array_merge($snap->data(), ['id' => $snap->id()]) : null;
+        }
+
+        // Batch-fetch hired seekers
+        $hiredSeekerUids = array_unique(array_filter(
+            array_map(fn($a) => $a['seekerUid'] ?? null, $hiredApps)
+        ));
+        $hiredSeekers = [];
+        foreach ($hiredSeekerUids as $seekerUid) {
+            $snap                    = $this->database->collection('seekers')->document($seekerUid)->snapshot();
+            $hiredSeekers[$seekerUid] = $snap->exists() ? $snap->data() : null;
+        }
+
+        foreach ($allJobs as &$job) {
+            $appId = $job['hiredApplicationId'] ?? null;
+            $app   = $appId ? ($hiredApps[$appId] ?? null) : null;
+
+            if ($app) {
+                $seekerData          = $hiredSeekers[$app['seekerUid']] ?? null;
+                $job['hiredApplication'] = [
+                    'id'                  => $app['id'],
+                    'status'              => $app['status'],
+                    'employerCompletedAt' => $app['employerCompletedAt'] ?? null,
+                    'seekerCompletedAt'   => $app['seekerCompletedAt'] ?? null,
+                    'seeker'              => $seekerData ? [
+                        'firstName' => $seekerData['firstName'] ?? null,
+                        'lastName'  => $seekerData['lastName']  ?? null,
+                    ] : null,
+                ];
+            } else {
+                $job['hiredApplication'] = null;
+            }
+        }
+        unset($job);
+
+        usort($allJobs, function ($a, $b) {
+            $ts = fn($j) => ($j['updatedAt'] instanceof Timestamp)
+                ? $j['updatedAt']->get()->getTimestamp()
+                : 0;
+            return $ts($b) <=> $ts($a);
+        });
+
+        return response()->json([
+            'message' => 'Archived jobs retrieved successfully',
+            'data'    => $allJobs,
         ], 200);
     }
 

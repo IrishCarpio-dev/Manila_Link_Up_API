@@ -22,12 +22,11 @@ class ApplicationController extends Controller
     {
         $uid = $request->authUid;
 
-        $seekerSnap = $this->database->collection('seekers')->document($uid)->snapshot();
-
-        if (!$seekerSnap->exists()) {
+        if ($request->authRole !== 'seeker') {
             return response()->json(['error' => 'Only seekers can apply to jobs'], 403);
         }
 
+        $seekerSnap = $this->database->collection('seekers')->document($uid)->snapshot();
         $seeker = $seekerSnap->data();
 
         if (!($seeker['isVerified'] ?? false)) {
@@ -101,9 +100,7 @@ class ApplicationController extends Controller
     {
         $uid = $request->authUid;
 
-        $seekerSnap = $this->database->collection('seekers')->document($uid)->snapshot();
-
-        if (!$seekerSnap->exists()) {
+        if ($request->authRole !== 'seeker') {
             return response()->json(['error' => 'Only seekers can withdraw applications'], 403);
         }
 
@@ -132,9 +129,7 @@ class ApplicationController extends Controller
     {
         $uid = $request->authUid;
 
-        $seekerSnap = $this->database->collection('seekers')->document($uid)->snapshot();
-
-        if (!$seekerSnap->exists()) {
+        if ($request->authRole !== 'seeker') {
             return response()->json(['error' => 'Only seekers can view their applications'], 403);
         }
 
@@ -220,9 +215,7 @@ class ApplicationController extends Controller
     {
         $uid = $request->authUid;
 
-        $employerSnap = $this->database->collection('employers')->document($uid)->snapshot();
-
-        if (!$employerSnap->exists()) {
+        if ($request->authRole !== 'employer') {
             return response()->json(['error' => 'Only employers can view job applicants'], 403);
         }
 
@@ -294,9 +287,7 @@ class ApplicationController extends Controller
     {
         $uid = $request->authUid;
 
-        $employerSnap = $this->database->collection('employers')->document($uid)->snapshot();
-
-        if (!$employerSnap->exists()) {
+        if ($request->authRole !== 'employer') {
             return response()->json(['error' => 'Only employers can update application status'], 403);
         }
 

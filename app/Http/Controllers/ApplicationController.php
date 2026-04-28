@@ -205,6 +205,8 @@ class ApplicationController extends Controller
         }
         unset($app);
 
+        $applications = array_map([$this, 'formatDoc'], $applications);
+
         return response()->json([
             'message' => 'Applications retrieved successfully',
             'data'    => $applications,
@@ -276,6 +278,8 @@ class ApplicationController extends Controller
             $app['seeker'] = $seekerData ?? null;
         }
         unset($app);
+
+        $applications = array_map([$this, 'formatDoc'], $applications);
 
         return response()->json([
             'message' => 'Applicants retrieved successfully',
@@ -438,7 +442,7 @@ class ApplicationController extends Controller
 
         return response()->json([
             'message' => 'Application status updated successfully',
-            'data'    => $updated,
+            'data'    => $this->formatDoc($updated),
         ], 200);
     }
 
@@ -525,7 +529,7 @@ class ApplicationController extends Controller
 
         return response()->json([
             'message' => 'Marked as complete',
-            'data'    => $result,
+            'data'    => $this->formatDoc($result),
         ], 200);
     }
 
@@ -613,6 +617,8 @@ class ApplicationController extends Controller
                 ? $lastApp['updatedAt']->get()->format('c')
                 : $lastApp['updatedAt'])
             : null;
+
+        $applications = array_map([$this, 'formatDoc'], $applications);
 
         return response()->json([
             'message'    => 'Completed jobs retrieved successfully',

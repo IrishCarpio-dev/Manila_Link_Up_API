@@ -244,6 +244,8 @@ class JobController extends Controller
             ]
             : null;
 
+        $jobs = array_map([$this, 'formatDoc'], $jobs);
+
         return response()->json([
             'message'    => 'Jobs retrieved successfully',
             'data'       => $jobs,
@@ -507,9 +509,12 @@ class JobController extends Controller
             unset($job);
         }
 
+        $jobs = array_map([$this, 'formatDoc'], $jobs);
+
         return response()->json([
             'message' => 'Jobs retrieved successfully',
             'data'    => $jobs,
         ], 200);
     }
+
 }

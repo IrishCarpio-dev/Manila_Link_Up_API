@@ -151,7 +151,7 @@ class SeekerController extends Controller
 
         return response()->json([
             'message' => 'Profile set up successfully.',
-            'data' => json_encode($seekerSnapshot->data())
+            'data'    => $this->formatDoc($seekerSnapshot->data()),
         ]);
     }
 }

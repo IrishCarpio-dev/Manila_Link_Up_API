@@ -101,7 +101,7 @@ class RatingController extends Controller
 
             return response()->json([
                 'message' => 'Rating updated successfully',
-                'data'    => $result,
+                'data'    => $this->formatDoc($result),
             ], 200);
         }
 
@@ -243,6 +243,8 @@ class RatingController extends Controller
             ] : null;
         }
         unset($rating);
+
+        $ratings = array_map([$this, 'formatDoc'], $ratings);
 
         return response()->json([
             'message' => 'Ratings retrieved successfully',

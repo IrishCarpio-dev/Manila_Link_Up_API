@@ -141,7 +141,7 @@ class EmployerController extends Controller
 
         return response()->json([
             'message' => 'Profile set up successfully.',
-            'data' => json_encode($snapshot->data())
+            'data'    => $this->formatDoc($snapshot->data()),
         ]);
     }
 }

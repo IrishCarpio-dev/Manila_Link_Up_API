@@ -41,7 +41,7 @@ class UserController extends Controller
         if (!empty($profiles)) {
             return response()->json([
                 'message' => 'User profile retrieved successfully',
-                'data'    => $profiles,
+                'data'    => $this->formatDoc($profiles),
             ], 200);
         }
 

@@ -24,18 +24,12 @@ class NotificationController extends Controller
         validator($request->all(), [
             'limit'      => ['sometimes', 'integer', 'min:1', 'max:50'],
             'startAfter' => ['sometimes', 'string'],
-            'unreadOnly' => ['sometimes', 'boolean'],
         ])->validate();
 
         $query = $this->database
             ->collection('notifications')
-            ->where('uid', '=', $uid);
-
-        if ($request->boolean('unreadOnly')) {
-            $query = $query->where('readAt', '=', null);
-        }
-
-        $query = $query->orderBy('createdAt', 'DESC');
+            ->where('uid', '=', $uid)
+            ->orderBy('createdAt', 'DESC');
 
         if ($request->filled('startAfter')) {
             $cursor = new Timestamp(Carbon::parse($request->startAfter)->toDateTimeImmutable());
@@ -48,67 +42,34 @@ class NotificationController extends Controller
         $notifications = [];
         foreach ($documents as $doc) {
             if ($doc->exists()) {
-                $data       = $doc->data();
-                $data['id'] = $doc->id();
-                $notifications[] = $data;
+                $notifications[] = $this->format($doc->id(), $doc->data());
             }
         }
 
-        return response()->json([
-            'message' => 'Notifications retrieved successfully',
-            'data'    => $notifications,
-        ], 200);
+        return response()->json(['data' => $notifications], 200);
     }
 
-    public function markRead(Request $request)
+    public function readAll(Request $request)
     {
         $uid = $request->authUid;
 
-        validator($request->all(), [
-            'notificationId' => ['sometimes', 'string'],
-            'all'            => ['sometimes', 'boolean'],
-        ])->validate();
+        $docs = $this->database
+            ->collection('notifications')
+            ->where('uid', '=', $uid)
+            ->where('readAt', '=', null)
+            ->documents();
 
-        if ($request->boolean('all')) {
-            $docs = $this->database
-                ->collection('notifications')
-                ->where('uid', '=', $uid)
-                ->where('readAt', '=', null)
-                ->documents();
-
-            $batch = $this->database->batch();
-            foreach ($docs as $doc) {
-                if ($doc->exists()) {
-                    $batch->update($doc->reference(), [
-                        ['path' => 'readAt', 'value' => FieldValue::serverTimestamp()],
-                    ]);
-                }
+        $batch = $this->database->batch();
+        foreach ($docs as $doc) {
+            if ($doc->exists()) {
+                $batch->update($doc->reference(), [
+                    ['path' => 'readAt', 'value' => FieldValue::serverTimestamp()],
+                ]);
             }
-            $batch->commit();
-
-            return response()->json(['message' => 'All notifications marked as read'], 200);
         }
+        $batch->commit();
 
-        if (!$request->filled('notificationId')) {
-            return response()->json(['error' => 'Provide notificationId or set all=true'], 422);
-        }
-
-        $docRef  = $this->database->collection('notifications')->document($request->notificationId);
-        $docSnap = $docRef->snapshot();
-
-        if (!$docSnap->exists()) {
-            return response()->json(['error' => 'Notification not found'], 404);
-        }
-
-        if ($docSnap->data()['uid'] !== $uid) {
-            return response()->json(['error' => 'Unauthorized'], 403);
-        }
-
-        $docRef->update([
-            ['path' => 'readAt', 'value' => FieldValue::serverTimestamp()],
-        ]);
-
-        return response()->json(['message' => 'Notification marked as read'], 200);
+        return response()->json(['message' => 'All notifications marked as read'], 200);
     }
 
     public function unreadCount(Request $request)
@@ -129,5 +90,22 @@ class NotificationController extends Controller
         }
 
         return response()->json(['count' => $count], 200);
+    }
+
+    private function format(string $id, array $data): array
+    {
+        $createdAt = $data['createdAt'] ?? null;
+
+        return [
+            'id'         => $id,
+            'type'       => $data['type'] ?? null,
+            'title'      => $data['title'] ?? null,
+            'message'    => $data['body'] ?? null,
+            'is_read'    => ($data['readAt'] ?? null) !== null,
+            'created_at' => $createdAt instanceof Timestamp
+                ? $createdAt->get()->format('c')
+                : $createdAt,
+            'data'       => $data['data'] ?? [],
+        ];
     }
 }

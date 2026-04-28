@@ -69,9 +69,9 @@ Route::middleware([FirebaseAuthMiddleware::class])->group(function () {
     Route::post('/devices/unregister', [DeviceController::class, 'unregister']);
 
     // Notifications
-    Route::post('/notifications/list',      [NotificationController::class, 'list']);
-    Route::post('/notifications/markRead',  [NotificationController::class, 'markRead']);
-    Route::get('/notifications/unreadCount', [NotificationController::class, 'unreadCount']);
+    Route::get('/notifications',              [NotificationController::class, 'list']);
+    Route::post('/notifications/read-all',    [NotificationController::class, 'readAll']);
+    Route::get('/notifications/unread-count', [NotificationController::class, 'unreadCount']);
 
     // Admin
     Route::post('/admin/verifyUser',            [AdminController::class, 'verifyUser']);

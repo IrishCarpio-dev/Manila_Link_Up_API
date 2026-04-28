@@ -4,6 +4,7 @@ namespace App\Services;
 
 use Google\Cloud\Firestore\FieldValue;
 use Kreait\Laravel\Firebase\Facades\Firebase;
+use App\Services\FcmNotifier;
 
 class NotificationService
 {

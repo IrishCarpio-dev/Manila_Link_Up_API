@@ -76,15 +76,13 @@ class JobController extends Controller
             'updatedAt'           => FieldValue::serverTimestamp(),
         ];
 
-        $docRef = $this->database
-            ->collection('jobs')
-            ->add($jobData);
-
-        $jobData['id'] = $docRef->id();
+        $docRef  = $this->database->collection('jobs')->add($jobData);
+        $snap    = $docRef->snapshot();
+        $created = array_merge($snap->data(), ['id' => $docRef->id()]);
 
         return response()->json([
             'message' => 'Job created successfully',
-            'data'    => $jobData
+            'data'    => $this->formatDoc($created),
         ], 201);
     }
 
@@ -358,6 +356,8 @@ class JobController extends Controller
                 : 0;
             return $ts($b) <=> $ts($a);
         });
+
+        $allJobs = array_map([$this, 'formatDoc'], $allJobs);
 
         return response()->json([
             'message' => 'Archived jobs retrieved successfully',

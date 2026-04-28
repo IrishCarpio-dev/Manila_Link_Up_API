@@ -63,16 +63,16 @@ class SeekerController extends Controller
             'updatedAt' => FieldValue::serverTimestamp()
         ];
 
-        $this->database
-            ->collection('seekers')
-            ->document($uid)
-            ->set($newElement);
+        $docRef = $this->database->collection('seekers')->document($uid);
+        $docRef->set($newElement);
 
         Firebase::auth()->setCustomUserClaims($uid, ['role' => 'seeker']);
 
+        $snap = $docRef->snapshot();
+
         return response()->json([
             'message' => 'Seeker registered successfully',
-            'data' => json_encode($newElement)
+            'data'    => $this->formatDoc($snap->data()),
         ]);
     }
 
@@ -149,9 +149,11 @@ class SeekerController extends Controller
 
         $seekerReference->update($newElement);
 
+        $updated = $seekerReference->snapshot();
+
         return response()->json([
             'message' => 'Profile set up successfully.',
-            'data'    => $this->formatDoc($seekerSnapshot->data()),
+            'data'    => $this->formatDoc($updated->data()),
         ]);
     }
 }

@@ -55,16 +55,16 @@ class EmployerController extends Controller
             'updatedAt' => FieldValue::serverTimestamp()
         ];
 
-        $this->database
-            ->collection('employers')
-            ->document($uid)
-            ->set($newEmployer);
+        $docRef = $this->database->collection('employers')->document($uid);
+        $docRef->set($newEmployer);
 
         Firebase::auth()->setCustomUserClaims($uid, ['role' => 'employer']);
 
+        $snap = $docRef->snapshot();
+
         return response()->json([
             'message' => 'Employer registered successfully',
-            'data' => json_encode($newEmployer)
+            'data'    => $this->formatDoc($snap->data()),
         ]);
     }
 
@@ -139,9 +139,11 @@ class EmployerController extends Controller
 
         $reference->update($newElement);
 
+        $updated = $reference->snapshot();
+
         return response()->json([
             'message' => 'Profile set up successfully.',
-            'data'    => $this->formatDoc($snapshot->data()),
+            'data'    => $this->formatDoc($updated->data()),
         ]);
     }
 }

@@ -87,12 +87,13 @@ class ApplicationController extends Controller
             'updatedAt'            => FieldValue::serverTimestamp(),
         ];
 
-        $docRef = $this->database->collection('applications')->add($appData);
-        $appData['id'] = $docRef->id();
+        $docRef  = $this->database->collection('applications')->add($appData);
+        $snap    = $docRef->snapshot();
+        $appData = array_merge($snap->data(), ['id' => $docRef->id()]);
 
         return response()->json([
             'message' => 'Application submitted successfully',
-            'data'    => $appData,
+            'data'    => $this->formatDoc($appData),
         ], 201);
     }
 

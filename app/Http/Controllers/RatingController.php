@@ -119,8 +119,7 @@ class RatingController extends Controller
             'updatedAt'     => FieldValue::serverTimestamp(),
         ];
 
-        $docRef           = $this->database->collection('ratings')->add($ratingData);
-        $ratingData['id'] = $docRef->id();
+        $docRef = $this->database->collection('ratings')->add($ratingData);
 
         $this->syncUserRatingStats($rateeUid, $rateeRole, (int) $request->score, true);
 
@@ -131,9 +130,12 @@ class RatingController extends Controller
             ['type' => 'rating_received', 'applicationId' => $request->applicationId]
         );
 
+        $snap       = $docRef->snapshot();
+        $ratingData = array_merge($snap->data(), ['id' => $docRef->id()]);
+
         return response()->json([
             'message' => 'Rating submitted successfully',
-            'data'    => $ratingData,
+            'data'    => $this->formatDoc($ratingData),
         ], 201);
     }
 

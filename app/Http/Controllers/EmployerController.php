@@ -60,6 +60,8 @@ class EmployerController extends Controller
             ->document($uid)
             ->set($newEmployer);
 
+        Firebase::auth()->setCustomUserClaims($uid, ['role' => 'employer']);
+
         return response()->json([
             'message' => 'Employer registered successfully',
             'data' => json_encode($newEmployer)

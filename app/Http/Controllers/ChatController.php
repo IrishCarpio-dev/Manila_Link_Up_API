@@ -23,8 +23,9 @@ class ChatController extends Controller
         $uid = $request->authUid;
 
         validator($request->all(), [
-            'limit'      => ['sometimes', 'integer', 'min:1', 'max:50'],
-            'startAfter' => ['sometimes', 'string'],
+            'limit'            => ['sometimes', 'integer', 'min:1', 'max:50'],
+            'startAfter'       => ['sometimes', 'string'],
+            'includeCompleted' => ['sometimes', 'boolean'],
         ])->validate();
 
         // Firestore doesn't support OR queries across fields in a single query.
@@ -38,6 +39,21 @@ class ChatController extends Controller
         $allChats = array_filter($allChats, function ($chat) use ($uid) {
             return !in_array($uid, $chat['hiddenBy'] ?? []);
         });
+
+        // Exclude completed chats (application status=6) unless explicitly requested
+        if (!$request->boolean('includeCompleted', false)) {
+            $applicationIds = array_unique(array_filter(array_column($allChats, 'applicationId')));
+            $applicationStatuses = [];
+            foreach ($applicationIds as $appId) {
+                $snap = $this->database->collection('applications')->document($appId)->snapshot();
+                $applicationStatuses[$appId] = $snap->exists() ? ($snap->data()['status'] ?? null) : null;
+            }
+
+            $allChats = array_filter($allChats, function ($chat) use ($applicationStatuses) {
+                $appId = $chat['applicationId'] ?? null;
+                return $appId === null || ($applicationStatuses[$appId] ?? null) !== 6;
+            });
+        }
 
         // Sort by lastMessageAt DESC
         usort($allChats, function ($a, $b) {

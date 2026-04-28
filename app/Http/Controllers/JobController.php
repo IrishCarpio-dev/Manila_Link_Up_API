@@ -27,16 +27,6 @@ class JobController extends Controller
             return response()->json(['error' => 'UID not found'], 400);
         }
 
-        $isEmployer = $this->database
-            ->collection('employers')
-            ->document($uid)
-            ->snapshot()
-            ->exists();
-
-        if (!$isEmployer) {
-            return response()->json(['error' => 'Only employers can create jobs'], 403);
-        }
-
         validator($request->all(), [
             'title'       => ['required', 'string', 'max:255'],
             'description' => ['required', 'string', 'max:5000'],
@@ -48,9 +38,18 @@ class JobController extends Controller
             'tags.*'      => ['string'],
         ])->validate();
 
+        if ($request->authRole !== 'employer') {
+            return response()->json(['error' => 'Only employers can create jobs'], 403);
+        }
+
+        $tagRefs    = array_map(fn($id) => $this->database->collection('serviceTags')->document($id), $request->tags);
+        $tagSnapMap = [];
+        foreach ($this->database->documents($tagRefs) as $snap) {
+            $tagSnapMap[$snap->id()] = $snap;
+        }
         foreach ($request->tags as $tagId) {
-            $tagSnap = $this->database->collection('serviceTags')->document($tagId)->snapshot();
-            if (!$tagSnap->exists()) {
+            $tagSnap = $tagSnapMap[$tagId] ?? null;
+            if (!$tagSnap || !$tagSnap->exists()) {
                 return response()->json(['error' => "Tag '{$tagId}' not found"], 422);
             }
             if (!($tagSnap->data()['isActive'] ?? false)) {
@@ -72,6 +71,7 @@ class JobController extends Controller
             'tags'                => $request->tags,
             'deletedAt'           => null,
             'filledAt'            => null,
+            'completedAt'         => null,
             'hiredApplicationId'  => null,
             'createdAt'           => FieldValue::serverTimestamp(),
             'updatedAt'           => FieldValue::serverTimestamp(),
@@ -162,12 +162,11 @@ class JobController extends Controller
             return response()->json(['error' => 'UID not found'], 400);
         }
 
-        $seekerSnap = $this->database->collection('seekers')->document($uid)->snapshot();
-
-        if (!$seekerSnap->exists()) {
+        if ($request->authRole !== 'seeker') {
             return response()->json(['error' => 'Only seekers can access this endpoint'], 403);
         }
 
+        $seekerSnap = $this->database->collection('seekers')->document($uid)->snapshot();
         $seekerData = $seekerSnap->data();
 
         if (!($seekerData['isProfileSet'] ?? false)) {
@@ -191,12 +190,14 @@ class JobController extends Controller
 
         $nowTimestamp = new Timestamp(Carbon::now()->toDateTimeImmutable());
         $query = $this->database->collection('jobs')
-            ->where('deletedAt', '=', null)
-            ->where('filledAt',  '=', null)
-            ->where('expiresAt', '>', $nowTimestamp);
+            ->where('deletedAt',   '=', null)
+            ->where('filledAt',    '=', null)
+            ->where('completedAt', '=', null)
+            ->where('expiresAt',   '>', $nowTimestamp);
 
-        $phpSalaryFilter   = false;
-        $phpLocationFilter = $mode === 'curated' && !empty($prefLocation);
+        $phpSalaryFilter    = false;
+        $phpLocationFilter  = $mode === 'curated' && !empty($prefLocation);
+        $phpCompletedFilter = false;
 
         if ($mode === 'curated') {
             $phpSalaryFilter = $prefSalary !== null;
@@ -225,7 +226,7 @@ class JobController extends Controller
             $query = $query->startAfter($cursorValues);
         }
 
-        $applyPhpFilters = $phpSalaryFilter || $phpLocationFilter;
+        $applyPhpFilters = $phpSalaryFilter || $phpLocationFilter || $phpCompletedFilter;
         $fetchLimit      = $applyPhpFilters ? min($perPage * 2, 100) : $perPage;
         $documents       = $query->limit($fetchLimit)->documents();
 
@@ -283,8 +284,121 @@ class JobController extends Controller
         ], 200);
     }
 
+    public function employerArchivedJobs(Request $request)
+    {
+        $uid = $request->authUid;
+
+        if (!$uid) {
+            return response()->json(['error' => 'UID not found'], 400);
+        }
+
+        if ($request->authRole !== 'employer') {
+            return response()->json(['error' => 'Only employers can access this endpoint'], 403);
+        }
+
+        validator($request->all(), [
+            'limit' => ['sometimes', 'integer', 'min:1', 'max:50'],
+        ])->validate();
+
+        $limit        = (int) $request->input('limit', 20);
+        $nowTimestamp = new Timestamp(Carbon::now()->toDateTimeImmutable());
+        // Epoch sentinel: any non-null server timestamp will be greater than this
+        $epoch        = new Timestamp(Carbon::createFromDate(2000, 1, 1)->toDateTimeImmutable());
+        $col          = $this->database->collection('jobs');
+        $seen         = [];
+        $allJobs      = [];
+
+        $queries = [
+            // Deleted (soft-archived) jobs — deletedAt is a timestamp, not null
+            $col->where('employer', '=', $uid)
+                ->where('deletedAt', '>', $epoch)
+                ->orderBy('deletedAt', 'desc')
+                ->limit($limit),
+
+            // Filled jobs (hired / completed) — not deleted
+            $col->where('employer', '=', $uid)
+                ->where('deletedAt', '=', null)
+                ->where('filledAt', '>', $epoch)
+                ->orderBy('filledAt', 'desc')
+                ->limit($limit),
+
+            // Expired jobs — not filled, not deleted
+            $col->where('employer', '=', $uid)
+                ->where('deletedAt', '=', null)
+                ->where('filledAt', '=', null)
+                ->where('expiresAt', '<', $nowTimestamp)
+                ->orderBy('expiresAt', 'desc')
+                ->limit($limit),
+        ];
+
+        foreach ($queries as $query) {
+            foreach ($query->documents() as $doc) {
+                if ($doc->exists() && !isset($seen[$doc->id()])) {
+                    $seen[$doc->id()] = true;
+                    $data             = $doc->data();
+                    $data['id']       = $doc->id();
+                    $allJobs[]        = $data;
+                }
+            }
+        }
+
+        // Batch-fetch hired applications
+        $hiredAppIds = array_unique(array_filter(array_column($allJobs, 'hiredApplicationId')));
+        $hiredApps   = [];
+        foreach ($hiredAppIds as $appId) {
+            $snap              = $this->database->collection('applications')->document($appId)->snapshot();
+            $hiredApps[$appId] = $snap->exists() ? array_merge($snap->data(), ['id' => $snap->id()]) : null;
+        }
+
+        // Batch-fetch hired seekers
+        $hiredSeekerUids = array_unique(array_filter(
+            array_map(fn($a) => $a['seekerUid'] ?? null, $hiredApps)
+        ));
+        $hiredSeekers = [];
+        foreach ($hiredSeekerUids as $seekerUid) {
+            $snap                    = $this->database->collection('seekers')->document($seekerUid)->snapshot();
+            $hiredSeekers[$seekerUid] = $snap->exists() ? $snap->data() : null;
+        }
+
+        foreach ($allJobs as &$job) {
+            $appId = $job['hiredApplicationId'] ?? null;
+            $app   = $appId ? ($hiredApps[$appId] ?? null) : null;
+
+            if ($app) {
+                $seekerData          = $hiredSeekers[$app['seekerUid']] ?? null;
+                $job['hiredApplication'] = [
+                    'id'                  => $app['id'],
+                    'status'              => $app['status'],
+                    'employerCompletedAt' => $app['employerCompletedAt'] ?? null,
+                    'seekerCompletedAt'   => $app['seekerCompletedAt'] ?? null,
+                    'seeker'              => $seekerData ? [
+                        'firstName' => $seekerData['firstName'] ?? null,
+                        'lastName'  => $seekerData['lastName']  ?? null,
+                    ] : null,
+                ];
+            } else {
+                $job['hiredApplication'] = null;
+            }
+        }
+        unset($job);
+
+        usort($allJobs, function ($a, $b) {
+            $ts = fn($j) => ($j['updatedAt'] instanceof Timestamp)
+                ? $j['updatedAt']->get()->getTimestamp()
+                : 0;
+            return $ts($b) <=> $ts($a);
+        });
+
+        return response()->json([
+            'message' => 'Archived jobs retrieved successfully',
+            'data'    => $allJobs,
+        ], 200);
+    }
+
     public function index(Request $request)
     {
+        $uid = $request->authUid;
+
         validator($request->all(), [
             'limit'         => ['sometimes', 'integer', 'min:1', 'max:50'],
             'sortBy'        => ['sometimes', 'string', 'in:createdAt,salary,expiresAt'],
@@ -306,12 +420,19 @@ class JobController extends Controller
             ], 422);
         }
 
+        // Employer viewing their own jobs: show filled jobs too so hired applicants are visible
+        $isOwnerView = $uid && $request->input('employer') === $uid
+            && $request->authRole === 'employer';
+
         $query = $this->database->collection('jobs');
 
         $nowTimestamp = new Timestamp(Carbon::now()->toDateTimeImmutable());
-        $query = $query->where('deletedAt', '=', null);
-        $query = $query->where('filledAt',  '=', null);
-        $query = $query->where('expiresAt', '>', $nowTimestamp);
+        $query = $query->where('deletedAt',   '=', null)
+                       ->where('completedAt', '=', null);
+        if (!$isOwnerView) {
+            $query = $query->where('filledAt', '=', null);
+            $query = $query->where('expiresAt', '>', $nowTimestamp);
+        }
 
         $sortBy        = $request->input('sortBy', 'createdAt');
         $sortDirection = $request->input('sortDirection', 'desc');
@@ -378,6 +499,45 @@ class JobController extends Controller
             $job['employer'] = $employerProfiles[$job['employer']] ?? null;
         }
         unset($job);
+
+        if ($isOwnerView) {
+            $hiredAppIds = array_filter(array_column($jobs, 'hiredApplicationId'));
+            $hiredApps   = [];
+            foreach (array_unique($hiredAppIds) as $appId) {
+                $snap = $this->database->collection('applications')->document($appId)->snapshot();
+                $hiredApps[$appId] = $snap->exists() ? array_merge($snap->data(), ['id' => $snap->id()]) : null;
+            }
+
+            $hiredSeekerUids = array_unique(array_filter(
+                array_map(fn($a) => $a['seekerUid'] ?? null, $hiredApps)
+            ));
+            $hiredSeekers = [];
+            foreach ($hiredSeekerUids as $seekerUid) {
+                $snap = $this->database->collection('seekers')->document($seekerUid)->snapshot();
+                $hiredSeekers[$seekerUid] = $snap->exists() ? $snap->data() : null;
+            }
+
+            foreach ($jobs as &$job) {
+                $appId = $job['hiredApplicationId'] ?? null;
+                $app   = $appId ? ($hiredApps[$appId] ?? null) : null;
+
+                if ($app && ($app['status'] ?? 0) >= 5) {
+                    $seekerData = $hiredSeekers[$app['seekerUid']] ?? null;
+                    $job['hiredApplication'] = [
+                        'id'                  => $app['id'],
+                        'status'              => $app['status'],
+                        'employerCompletedAt' => $app['employerCompletedAt'] ?? null,
+                        'seeker'              => $seekerData ? [
+                            'firstName' => $seekerData['firstName'] ?? null,
+                            'lastName'  => $seekerData['lastName']  ?? null,
+                        ] : null,
+                    ];
+                } else {
+                    $job['hiredApplication'] = null;
+                }
+            }
+            unset($job);
+        }
 
         return response()->json([
             'message' => 'Jobs retrieved successfully',

@@ -180,8 +180,8 @@ class JobController extends Controller
         }
 
         $query = $query
-            ->orderBy('createdAt', 'desc')
-            ->orderBy('expiresAt', 'asc');
+            ->orderBy('expiresAt', 'asc')
+            ->orderBy('createdAt', 'desc');
 
         if ($request->filled('startAfter')) {
             $expiresAtCursor  = new Timestamp(Carbon::parse($request->startAfter)->toDateTimeImmutable());

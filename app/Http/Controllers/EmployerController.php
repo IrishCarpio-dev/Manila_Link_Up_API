@@ -89,10 +89,16 @@ class EmployerController extends Controller
             'birthDate'    => ['required', 'date'],
             'location'     => ['required', 'string', Rule::in(config('manila.districts'))],
             'profilePhoto' => [
-                'file',
-                'image',
-                'mimes:jpeg,png,jpg',
-                'max:2048'
+                'nullable',
+                'string',
+                function ($attribute, $value, $fail) {
+                    if (!$value) return;
+                    $base64 = preg_replace('/^data:image\/\w+;base64,/', '', $value);
+                    $decoded = base64_decode($base64, true);
+                    if ($decoded === false || strlen($decoded) > 1048576) {
+                        $fail('Profile photo must be a valid base64 image under 1MB.');
+                    }
+                },
             ],
             'validId' => [
                 'required',
@@ -111,13 +117,16 @@ class EmployerController extends Controller
         ])->validate();
 
         // SAVE FILES
-        $profilePhotoUrl = "";
-        if ($request->hasFile('profilePhoto')) {
-            $profilePhotoUrl = FileUploader::upload($request->file('profilePhoto'), 'profilePhotos');
-        }
-
         $clearanceUrl = FileUploader::upload($request->file('clearance'), 'clearances');
-        $validIdUrl = FileUploader::upload($request->file('validId'), 'validIds');
+        $validIdUrl   = FileUploader::upload($request->file('validId'), 'validIds');
+
+        // STORE PROFILE PHOTO IN SEPARATE COLLECTION (avoids 1MB doc limit)
+        if ($request->filled('profilePhoto')) {
+            $this->database->collection('profilePhotos')->document($uid)->set([
+                'base64'    => $request->profilePhoto,
+                'updatedAt' => FieldValue::serverTimestamp(),
+            ]);
+        }
 
         // STORE DATA
         $dateString = $request->birthDate;
@@ -132,10 +141,6 @@ class EmployerController extends Controller
             ['path' => 'isProfileSet', 'value' => TRUE],
             ['path' => 'updatedAt', 'value' => FieldValue::serverTimestamp()]
         ];
-
-        if (!empty($profilePhotoUrl)) {
-            $newElement[] = ['path' => 'profilePhotoUrl', 'value' => $profilePhotoUrl];
-        }
 
         $reference->update($newElement);
 

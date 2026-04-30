@@ -183,6 +183,13 @@ class ApplicationController extends Controller
             $employers[$employerUid] = $snap->exists() ? $snap->data() : null;
         }
 
+        // Batch-fetch profile photos
+        $employerPhotos = [];
+        foreach ($employerUids as $employerUid) {
+            $snap = $this->database->collection('profilePhotos')->document($employerUid)->snapshot();
+            $employerPhotos[$employerUid] = $snap->exists() ? ($snap->data()['base64'] ?? null) : null;
+        }
+
         // Build response
         foreach ($applications as &$app) {
             $job = $jobs[$app['jobId']] ?? null;
@@ -198,8 +205,8 @@ class ApplicationController extends Controller
                     'expiresAt'   => $job['expiresAt'],
                     'tags'        => $job['tags'] ?? [],
                     'employer'    => $employerData ? [
-                        'fullName'        => $employerData['fullName'] ?? null,
-                        'profilePhotoUrl' => $employerData['profilePhotoUrl'] ?? null,
+                        'fullName'     => $employerData['fullName'] ?? null,
+                        'profilePhoto' => $employerPhotos[$job['employer']] ?? null,
                     ] : null,
                 ];
             } else {
@@ -275,10 +282,22 @@ class ApplicationController extends Controller
             $snap = $this->database->collection('seekers')->document($seekerUid)->snapshot();
             $seekers[$seekerUid] = $snap->exists() ? $snap->data() : null;
         }
+        $seekerPhotos = [];
+        foreach ($seekerUids as $seekerUid) {
+            $snap = $this->database->collection('profilePhotos')->document($seekerUid)->snapshot();
+            $seekerPhotos[$seekerUid] = $snap->exists() ? ($snap->data()['base64'] ?? null) : null;
+        }
 
         foreach ($applications as &$app) {
             $seekerData = $seekers[$app['seekerUid']] ?? null;
-            $app['seeker'] = $seekerData ?? null;
+            $app['seeker'] = $seekerData ? [
+                'firstName'    => $seekerData['firstName'] ?? null,
+                'lastName'     => $seekerData['lastName'] ?? null,
+                'mobileNumber' => $seekerData['mobileNumber'] ?? null,
+                'isOpenForWork' => $seekerData['isOpenForWork'] ?? null,
+                'isVerified'   => $seekerData['isVerified'] ?? null,
+                'profilePhoto' => $seekerPhotos[$app['seekerUid']] ?? null,
+            ] : null;
         }
         unset($app);
 
@@ -585,8 +604,14 @@ class ApplicationController extends Controller
         $employerUids = array_unique(array_filter(array_map(fn($j) => $j['employer'] ?? null, $jobs)));
         $employers    = [];
         foreach ($employerUids as $employerUid) {
-            $snap                  = $this->database->collection('employers')->document($employerUid)->snapshot();
+            $snap                    = $this->database->collection('employers')->document($employerUid)->snapshot();
             $employers[$employerUid] = $snap->exists() ? $snap->data() : null;
+        }
+
+        $employerPhotos = [];
+        foreach ($employerUids as $employerUid) {
+            $snap                       = $this->database->collection('profilePhotos')->document($employerUid)->snapshot();
+            $employerPhotos[$employerUid] = $snap->exists() ? ($snap->data()['base64'] ?? null) : null;
         }
 
         foreach ($applications as &$app) {
@@ -603,8 +628,8 @@ class ApplicationController extends Controller
                     'expiresAt'   => $job['expiresAt'],
                     'tags'        => $job['tags'] ?? [],
                     'employer'    => $employerData ? [
-                        'fullName'        => $employerData['fullName'] ?? null,
-                        'profilePhotoUrl' => $employerData['profilePhotoUrl'] ?? null,
+                        'fullName'     => $employerData['fullName'] ?? null,
+                        'profilePhoto' => $employerPhotos[$job['employer']] ?? null,
                     ] : null,
                 ];
             } else {

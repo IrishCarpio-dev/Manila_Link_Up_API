@@ -224,8 +224,17 @@ class JobController extends Controller
             $snap = $this->database->collection('employers')->document($employerUid)->snapshot();
             $employerProfiles[$employerUid] = $snap->exists() ? $snap->data() : null;
         }
+        $employerPhotos = [];
+        foreach ($employerUids as $employerUid) {
+            $snap = $this->database->collection('profilePhotos')->document($employerUid)->snapshot();
+            $employerPhotos[$employerUid] = $snap->exists() ? ($snap->data()['base64'] ?? null) : null;
+        }
         foreach ($jobs as &$job) {
-            $job['employer'] = $employerProfiles[$job['employer']] ?? null;
+            $profile = $employerProfiles[$job['employer']] ?? null;
+            $job['employer'] = $profile ? [
+                'fullName'     => $profile['fullName'] ?? null,
+                'profilePhoto' => $employerPhotos[$job['employer']] ?? null,
+            ] : null;
         }
         unset($job);
 
@@ -475,14 +484,20 @@ class JobController extends Controller
         $employerUids    = array_unique(array_column($jobs, 'employer'));
         $employerProfiles = [];
         foreach ($employerUids as $employerUid) {
-            $snap = $this->database
-                ->collection('employers')
-                ->document($employerUid)
-                ->snapshot();
+            $snap = $this->database->collection('employers')->document($employerUid)->snapshot();
             $employerProfiles[$employerUid] = $snap->exists() ? $snap->data() : null;
         }
+        $employerPhotos = [];
+        foreach ($employerUids as $employerUid) {
+            $snap = $this->database->collection('profilePhotos')->document($employerUid)->snapshot();
+            $employerPhotos[$employerUid] = $snap->exists() ? ($snap->data()['base64'] ?? null) : null;
+        }
         foreach ($jobs as &$job) {
-            $job['employer'] = $employerProfiles[$job['employer']] ?? null;
+            $profile = $employerProfiles[$job['employer']] ?? null;
+            $job['employer'] = $profile ? [
+                'fullName'     => $profile['fullName'] ?? null,
+                'profilePhoto' => $employerPhotos[$job['employer']] ?? null,
+            ] : null;
         }
         unset($job);
 

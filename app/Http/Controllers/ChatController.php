@@ -95,10 +95,11 @@ class ChatController extends Controller
             $profile       = $profiles[$cUid] ?? null;
             $job           = $jobs[$chat['jobId']] ?? null;
 
+            $photoSnap = $this->database->collection('profilePhotos')->document($cUid)->snapshot();
             $chat['counterpart'] = $profile ? [
-                'uid'             => $cUid,
-                'name'            => $profile['fullName'] ?? (($profile['firstName'] ?? '') . ' ' . ($profile['lastName'] ?? '')),
-                'profilePhotoUrl' => $profile['profilePhotoUrl'] ?? null,
+                'uid'          => $cUid,
+                'name'         => $profile['fullName'] ?? (($profile['firstName'] ?? '') . ' ' . ($profile['lastName'] ?? '')),
+                'profilePhoto' => $photoSnap->exists() ? ($photoSnap->data()['base64'] ?? null) : null,
             ] : null;
 
             $chat['job'] = $job ? [

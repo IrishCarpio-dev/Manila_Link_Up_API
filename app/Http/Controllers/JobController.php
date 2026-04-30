@@ -397,6 +397,57 @@ class JobController extends Controller
         ], 200);
     }
 
+    public function show(Request $request, string $id)
+    {
+        $uid = $request->authUid;
+
+        $snap = $this->database->collection('jobs')->document($id)->snapshot();
+
+        if (!$snap->exists()) {
+            return response()->json(['error' => 'Job not found'], 404);
+        }
+
+        $data       = $snap->data();
+        $data['id'] = $snap->id();
+
+        $employerUid         = $data['employer'];
+        $employerSnap        = $this->database->collection('employers')->document($employerUid)->snapshot();
+        $data['employer']    = $employerSnap->exists() ? $employerSnap->data() : null;
+
+        $isOwnerView = $uid && $uid === $employerUid && $request->authRole === 'employer';
+
+        if ($isOwnerView) {
+            $appId = $data['hiredApplicationId'] ?? null;
+            $app   = null;
+
+            if ($appId) {
+                $appSnap = $this->database->collection('applications')->document($appId)->snapshot();
+                $app     = $appSnap->exists() ? array_merge($appSnap->data(), ['id' => $appSnap->id()]) : null;
+            }
+
+            if ($app && ($app['status'] ?? 0) >= 5) {
+                $seekerSnap = $this->database->collection('seekers')->document($app['seekerUid'])->snapshot();
+                $seekerData = $seekerSnap->exists() ? $seekerSnap->data() : null;
+                $data['hiredApplication'] = [
+                    'id'                  => $app['id'],
+                    'status'              => $app['status'],
+                    'employerCompletedAt' => $app['employerCompletedAt'] ?? null,
+                    'seeker'              => $seekerData ? [
+                        'firstName' => $seekerData['firstName'] ?? null,
+                        'lastName'  => $seekerData['lastName']  ?? null,
+                    ] : null,
+                ];
+            } else {
+                $data['hiredApplication'] = null;
+            }
+        }
+
+        return response()->json([
+            'message' => 'Job retrieved successfully',
+            'data'    => $this->formatDoc($data),
+        ], 200);
+    }
+
     public function index(Request $request)
     {
         $uid = $request->authUid;

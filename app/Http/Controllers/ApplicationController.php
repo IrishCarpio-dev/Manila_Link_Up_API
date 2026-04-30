@@ -91,12 +91,20 @@ class ApplicationController extends Controller
         $snap    = $docRef->snapshot();
         $appData = array_merge($snap->data(), ['id' => $docRef->id()]);
 
+        $seekerName = trim(($seeker['firstName'] ?? '') . ' ' . ($seeker['lastName'] ?? ''));
+        $jobTitle   = $job['title'] ?? '';
+
         NotificationService::notify(
             $job['employer'],
             'new_applicant',
             'New Applicant',
-            'Someone applied to your job "' . ($job['title'] ?? '') . '".',
-            ['jobId' => $request->jobId, 'applicationId' => $docRef->id()]
+            $seekerName . ' applied for ' . $jobTitle,
+            [
+                'jobId'         => $request->jobId,
+                'applicationId' => $docRef->id(),
+                'jobTitle'      => $jobTitle,
+                'seekerName'    => $seekerName,
+            ]
         );
 
         return response()->json([
@@ -368,7 +376,11 @@ class ApplicationController extends Controller
                 'interview_offer',
                 'Interview Offer',
                 'An employer wants to interview you!',
-                ['applicationId' => $request->applicationId, 'jobId' => $app['jobId']]
+                [
+                    'applicationId' => $request->applicationId,
+                    'jobId'         => $app['jobId'],
+                    'jobTitle'      => $job['title'] ?? '',
+                ]
             );
         }
 
@@ -418,7 +430,11 @@ class ApplicationController extends Controller
                 'hired',
                 'You got hired!',
                 'Congratulations! You have been hired.',
-                ['applicationId' => $request->applicationId, 'jobId' => $app['jobId']]
+                [
+                    'applicationId' => $request->applicationId,
+                    'jobId'         => $app['jobId'],
+                    'jobTitle'      => $job['title'] ?? '',
+                ]
             );
 
             // Notify auto-rejected seekers
@@ -428,7 +444,10 @@ class ApplicationController extends Controller
                     'job_filled',
                     'Application Update',
                     'The position has been filled. Keep looking!',
-                    ['jobId' => $app['jobId']]
+                    [
+                        'jobId'    => $app['jobId'],
+                        'jobTitle' => $job['title'] ?? '',
+                    ]
                 );
             }
         }
@@ -445,7 +464,11 @@ class ApplicationController extends Controller
                 'rejected',
                 'Application Update',
                 'Your application was not selected this time.',
-                ['applicationId' => $request->applicationId, 'jobId' => $app['jobId']]
+                [
+                    'applicationId' => $request->applicationId,
+                    'jobId'         => $app['jobId'],
+                    'jobTitle'      => $job['title'] ?? '',
+                ]
             );
         }
 
@@ -523,19 +546,32 @@ class ApplicationController extends Controller
                 ['path' => 'updatedAt',   'value' => FieldValue::serverTimestamp()],
             ]);
 
+            $seekerSnap = $this->database->collection('seekers')->document($app['seekerUid'])->snapshot();
+            $seekerData = $seekerSnap->exists() ? $seekerSnap->data() : [];
+            $seekerName = trim(($seekerData['firstName'] ?? '') . ' ' . ($seekerData['lastName'] ?? ''));
+
             NotificationService::notify(
                 $app['seekerUid'],
                 'job_completed',
                 'Job Completed',
                 'Your job is complete! Rate your experience.',
-                ['applicationId' => $request->applicationId, 'jobId' => $app['jobId']]
+                [
+                    'applicationId' => $request->applicationId,
+                    'jobId'         => $app['jobId'],
+                    'jobTitle'      => $job['title'] ?? '',
+                ]
             );
             NotificationService::notify(
                 $job['employer'],
                 'job_completed',
                 'Job Completed',
                 'Your job is complete! Rate your worker.',
-                ['applicationId' => $request->applicationId, 'jobId' => $app['jobId']]
+                [
+                    'applicationId' => $request->applicationId,
+                    'jobId'         => $app['jobId'],
+                    'jobTitle'      => $job['title'] ?? '',
+                    'seekerName'    => $seekerName,
+                ]
             );
         }
 

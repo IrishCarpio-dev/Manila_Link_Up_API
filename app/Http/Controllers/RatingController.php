@@ -123,12 +123,26 @@ class RatingController extends Controller
 
         $this->syncUserRatingStats($rateeUid, $rateeRole, (int) $request->score, true);
 
+        $raterCollection = $raterRole === 'seeker' ? 'seekers' : 'employers';
+        $raterSnap       = $this->database->collection($raterCollection)->document($uid)->snapshot();
+        $raterData       = $raterSnap->exists() ? $raterSnap->data() : [];
+        $raterName       = $raterRole === 'seeker'
+            ? trim(($raterData['firstName'] ?? '') . ' ' . ($raterData['lastName'] ?? ''))
+            : ($raterData['fullName'] ?? '');
+
+        $jobLabel = $job['title'] ?? $app['jobId'];
+
         NotificationService::notify(
             $rateeUid,
             'rating_received',
-            'New Rating',
-            'You received a new rating!',
-            ['applicationId' => $request->applicationId, 'jobId' => $app['jobId']]
+            'New Rating Notification',
+            "You received a rating from {$raterName} for {$jobLabel}.",
+            [
+                'applicationId' => $request->applicationId,
+                'jobId'         => $app['jobId'],
+                'jobTitle'      => $job['title'] ?? '',
+                'raterName'     => $raterName,
+            ]
         );
 
         $snap       = $docRef->snapshot();

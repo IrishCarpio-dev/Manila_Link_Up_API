@@ -112,9 +112,11 @@ class ChatController extends Controller
         }
         unset($chat);
 
+        $allChats = array_map([$this, 'formatDoc'], array_values($allChats));
+
         return response()->json([
             'message' => 'Chats retrieved successfully',
-            'data'    => array_values($allChats),
+            'data'    => $allChats,
         ], 200);
     }
 

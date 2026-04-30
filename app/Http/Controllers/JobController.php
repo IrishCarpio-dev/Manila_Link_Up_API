@@ -77,18 +77,16 @@ class JobController extends Controller
             'updatedAt'           => FieldValue::serverTimestamp(),
         ];
 
-        $docRef = $this->database
-            ->collection('jobs')
-            ->add($jobData);
-
-        $jobId         = $docRef->id();
-        $jobData['id'] = $jobId;
+        $docRef  = $this->database->collection('jobs')->add($jobData);
+        $jobId   = $docRef->id();
+        $snap    = $docRef->snapshot();
+        $created = array_merge($snap->data(), ['id' => $jobId]);
 
         $this->notifyMatchingSeekers($jobId, $request->title, $request->tags);
 
         return response()->json([
             'message' => 'Job created successfully',
-            'data'    => $jobData
+            'data'    => $this->formatDoc($created),
         ], 201);
     }
 
@@ -276,6 +274,8 @@ class JobController extends Controller
             ]
             : null;
 
+        $jobs = array_map([$this, 'formatDoc'], $jobs);
+
         return response()->json([
             'message'    => 'Jobs retrieved successfully',
             'data'       => $jobs,
@@ -388,6 +388,8 @@ class JobController extends Controller
                 : 0;
             return $ts($b) <=> $ts($a);
         });
+
+        $allJobs = array_map([$this, 'formatDoc'], $allJobs);
 
         return response()->json([
             'message' => 'Archived jobs retrieved successfully',
@@ -539,9 +541,12 @@ class JobController extends Controller
             unset($job);
         }
 
+        $jobs = array_map([$this, 'formatDoc'], $jobs);
+
         return response()->json([
             'message' => 'Jobs retrieved successfully',
             'data'    => $jobs,
         ], 200);
     }
+
 }

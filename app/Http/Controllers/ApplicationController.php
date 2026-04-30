@@ -137,13 +137,15 @@ class ApplicationController extends Controller
         validator($request->all(), [
             'limit'      => ['sometimes', 'integer', 'min:1', 'max:50'],
             'startAfter' => ['sometimes', 'string'],
-            'status'     => ['sometimes', 'integer', 'in:1,2,3,4,5,6'],
+            'status'     => ['sometimes', 'integer', 'in:1,2,3,5'],
         ])->validate();
 
         $query = $this->database->collection('applications')->where('seekerUid', '=', $uid);
 
         if ($request->filled('status')) {
             $query = $query->where('status', '=', (int) $request->status);
+        } else {
+            $query = $query->where('status', 'in', [1, 2, 3, 5]);
         }
 
         $query = $query->orderBy('createdAt', 'DESC');

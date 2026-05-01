@@ -18,6 +18,7 @@ use App\Http\Controllers\DeviceController;
 use App\Http\Controllers\ServiceTagController;
 use App\Http\Controllers\SeekerPreferencesController;
 use App\Http\Controllers\ProfilePhotoController;
+use App\Http\Controllers\NotificationController;
 
 Route::get('/test-firebase', function (Database $database) {
     $database->getReference('test_connection')->set([
@@ -43,6 +44,7 @@ Route::middleware([FirebaseAuthMiddleware::class])->group(function () {
     Route::post('/employer/setupProfile', [EmployerController::class, 'setupProfile']);
 
     // Jobs
+    Route::get('/jobs/{id}',              [JobController::class, 'show']);
     Route::post('/jobs',                  [JobController::class, 'store']);
     Route::post('/jobs/list',             [JobController::class, 'index']);
     Route::post('/jobs/archive',          [JobController::class, 'destroy']);
@@ -71,8 +73,14 @@ Route::middleware([FirebaseAuthMiddleware::class])->group(function () {
     Route::post('/devices/register',   [DeviceController::class, 'register']);
     Route::post('/devices/unregister', [DeviceController::class, 'unregister']);
 
+    // Notifications
+    Route::get('/notifications',              [NotificationController::class, 'list']);
+    Route::post('/notifications/read-all',    [NotificationController::class, 'readAll']);
+    Route::get('/notifications/unread-count', [NotificationController::class, 'unreadCount']);
+
     // Admin
     Route::post('/admin/verifyUser',            [AdminController::class, 'verifyUser']);
+    Route::post('/admin/rejectVerification',    [AdminController::class, 'rejectVerification']);
     Route::get('/admin/analytics/overview',     [AdminController::class, 'analyticsOverview']);
     Route::get('/admin/analytics/tags',         [AdminController::class, 'analyticsTags']);
     Route::get('/admin/analytics/funnel',       [AdminController::class, 'analyticsFunnel']);

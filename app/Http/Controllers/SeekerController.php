@@ -9,6 +9,7 @@ use Google\Cloud\Core\Timestamp;
 use Carbon\Carbon;
 use Kreait\Laravel\Firebase\Facades\Firebase;
 use App\Services\FileUploader;
+use App\Services\NotificationService;
 
 class SeekerController extends Controller
 {
@@ -152,6 +153,19 @@ class SeekerController extends Controller
         ];
 
         $seekerReference->update($newElement);
+
+        if ($isFirstSetup) {
+            $prefs = $seekerSnapshot->data()['preferences'] ?? [];
+            if (empty($prefs['tags'] ?? [])) {
+                NotificationService::notify(
+                    $uid,
+                    'preferences_nudge',
+                    'Set Your Job Preferences',
+                    'Tell us your preferred job types and salary to get matched with the right opportunities!',
+                    []
+                );
+            }
+        }
 
         $updated = $seekerReference->snapshot();
 

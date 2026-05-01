@@ -7,6 +7,7 @@ use Google\Cloud\Firestore\FieldValue;
 use Google\Cloud\Core\Timestamp;
 use Carbon\Carbon;
 use Kreait\Laravel\Firebase\Facades\Firebase;
+use App\Services\NotificationService;
 
 class AdminController extends Controller
 {
@@ -56,11 +57,63 @@ class AdminController extends Controller
             ->collection($collection)
             ->document($userUid)
             ->update([
-                ['path' => 'isVerified', 'value' => true],
-                ['path' => 'updatedAt',  'value' => FieldValue::serverTimestamp()],
+                ['path' => 'isVerified',  'value' => true],
+                ['path' => 'rejectedAt',  'value' => null],
+                ['path' => 'updatedAt',   'value' => FieldValue::serverTimestamp()],
             ]);
 
+        NotificationService::notify(
+            $userUid,
+            'verified',
+            'Account Verified',
+            'Your ID and clearance have been approved. You can now use Manila Link Up!',
+            ['userType' => $request->type]
+        );
+
         return response()->json(['message' => "User {$userUid} verified."]);
+    }
+
+    public function rejectVerification(Request $request)
+    {
+        $uid = $request->authUid;
+
+        if (!$uid) {
+            return response()->json(['error' => 'UID not found'], 400);
+        }
+
+        if (!$this->assertAdmin($uid)) {
+            return response()->json(['error' => 'Unauthorized access'], 401);
+        }
+
+        $request->validate([
+            'type'    => 'required|in:seeker,employer',
+            'userUid' => 'required|string',
+        ]);
+
+        $collection = ($request->type === 'seeker') ? 'seekers' : 'employers';
+        $userUid    = $request->userUid;
+
+        $docRef = $this->database->collection($collection)->document($userUid);
+
+        if (!$docRef->snapshot()->exists()) {
+            return response()->json(['error' => 'User not found'], 404);
+        }
+
+        $docRef->update([
+            ['path' => 'isVerified',  'value' => false],
+            ['path' => 'rejectedAt',  'value' => FieldValue::serverTimestamp()],
+            ['path' => 'updatedAt',   'value' => FieldValue::serverTimestamp()],
+        ]);
+
+        NotificationService::notify(
+            $userUid,
+            'verification_rejected',
+            'Verification Unsuccessful',
+            'Your submitted ID or clearance was not accepted. Please re-upload clear, valid documents.',
+            ['userType' => $request->type]
+        );
+
+        return response()->json(['message' => "User {$userUid} verification rejected."]);
     }
 
     public function analyticsOverview(Request $request)

@@ -7,7 +7,7 @@ use Google\Cloud\Firestore\FieldValue;
 use Google\Cloud\Core\Timestamp;
 use Carbon\Carbon;
 use Kreait\Laravel\Firebase\Facades\Firebase;
-use App\Services\FcmNotifier;
+use App\Services\NotificationService;
 
 class ApplicationController extends Controller
 {
@@ -90,6 +90,22 @@ class ApplicationController extends Controller
         $docRef  = $this->database->collection('applications')->add($appData);
         $snap    = $docRef->snapshot();
         $appData = array_merge($snap->data(), ['id' => $docRef->id()]);
+
+        $seekerName = trim(($seeker['firstName'] ?? '') . ' ' . ($seeker['lastName'] ?? ''));
+        $jobTitle   = $job['title'] ?? '';
+
+        NotificationService::notify(
+            $job['employer'],
+            'new_applicant',
+            'New Applicant',
+            $seekerName . ' applied for ' . $jobTitle,
+            [
+                'jobId'         => $request->jobId,
+                'applicationId' => $docRef->id(),
+                'jobTitle'      => $jobTitle,
+                'seekerName'    => $seekerName,
+            ]
+        );
 
         return response()->json([
             'message' => 'Application submitted successfully',
@@ -357,6 +373,10 @@ class ApplicationController extends Controller
             return response()->json(['error' => 'Status is already set to this value'], 422);
         }
 
+        $employerSnap = $this->database->collection('employers')->document($uid)->snapshot();
+        $employer     = $employerSnap->exists() ? $employerSnap->data() : [];
+        $employerName = trim(($employer['firstName'] ?? '') . ' ' . ($employer['lastName'] ?? ''));
+
         // INTERVIEW (2): create chat if not exists
         if ($newStatus === 2) {
             $chatId  = $app['jobId'] . '_' . $app['seekerUid'];
@@ -384,11 +404,17 @@ class ApplicationController extends Controller
                 ['path' => 'updatedAt', 'value' => FieldValue::serverTimestamp()],
             ]);
 
-            FcmNotifier::sendToUser(
+            NotificationService::notify(
                 $app['seekerUid'],
+                'interview_offer',
                 'Interview Offer',
                 'An employer wants to interview you!',
-                ['type' => 'status_change', 'status' => '2', 'applicationId' => $request->applicationId]
+                [
+                    'applicationId' => $request->applicationId,
+                    'jobId'         => $app['jobId'],
+                    'employerName'  => $employerName,
+                    'jobTitle'      => $job['title'] ?? '',
+                ]
             );
         }
 
@@ -433,20 +459,29 @@ class ApplicationController extends Controller
             ]);
 
             // Notify hired seeker
-            FcmNotifier::sendToUser(
+            NotificationService::notify(
                 $app['seekerUid'],
+                'hired',
                 'You got hired!',
                 'Congratulations! You have been hired.',
-                ['type' => 'status_change', 'status' => '5', 'applicationId' => $request->applicationId]
+                [
+                    'applicationId' => $request->applicationId,
+                    'jobId'         => $app['jobId'],
+                    'jobTitle'      => $job['title'] ?? '',
+                ]
             );
 
             // Notify auto-rejected seekers
             foreach (array_unique($rejectedUids) as $rejectedUid) {
-                FcmNotifier::sendToUser(
+                NotificationService::notify(
                     $rejectedUid,
+                    'job_filled',
                     'Application Update',
-                    'The position has been filled.',
-                    ['type' => 'status_change', 'status' => '3', 'applicationId' => $request->applicationId]
+                    'The position has been filled. Keep looking!',
+                    [
+                        'jobId'    => $app['jobId'],
+                        'jobTitle' => $job['title'] ?? '',
+                    ]
                 );
             }
         }
@@ -458,11 +493,16 @@ class ApplicationController extends Controller
                 ['path' => 'updatedAt', 'value' => FieldValue::serverTimestamp()],
             ]);
 
-            FcmNotifier::sendToUser(
+            NotificationService::notify(
                 $app['seekerUid'],
+                'rejected',
                 'Application Update',
-                'Your application status has been updated.',
-                ['type' => 'status_change', 'status' => (string) $newStatus, 'applicationId' => $request->applicationId]
+                'Your application was not selected this time.',
+                [
+                    'applicationId' => $request->applicationId,
+                    'jobId'         => $app['jobId'],
+                    'jobTitle'      => $job['title'] ?? '',
+                ]
             );
         }
 
@@ -540,17 +580,32 @@ class ApplicationController extends Controller
                 ['path' => 'updatedAt',   'value' => FieldValue::serverTimestamp()],
             ]);
 
-            FcmNotifier::sendToUser(
+            $seekerSnap = $this->database->collection('seekers')->document($app['seekerUid'])->snapshot();
+            $seekerData = $seekerSnap->exists() ? $seekerSnap->data() : [];
+            $seekerName = trim(($seekerData['firstName'] ?? '') . ' ' . ($seekerData['lastName'] ?? ''));
+
+            NotificationService::notify(
                 $app['seekerUid'],
+                'job_completed',
                 'Job Completed',
                 'Your job is complete! Rate your experience.',
-                ['type' => 'status_change', 'status' => '6', 'applicationId' => $request->applicationId]
+                [
+                    'applicationId' => $request->applicationId,
+                    'jobId'         => $app['jobId'],
+                    'jobTitle'      => $job['title'] ?? '',
+                ]
             );
-            FcmNotifier::sendToUser(
+            NotificationService::notify(
                 $job['employer'],
+                'job_completed',
                 'Job Completed',
                 'Your job is complete! Rate your worker.',
-                ['type' => 'status_change', 'status' => '6', 'applicationId' => $request->applicationId]
+                [
+                    'applicationId' => $request->applicationId,
+                    'jobId'         => $app['jobId'],
+                    'jobTitle'      => $job['title'] ?? '',
+                    'seekerName'    => $seekerName,
+                ]
             );
         }
 

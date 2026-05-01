@@ -386,6 +386,59 @@ class AdminController extends Controller
         ], 200);
     }
 
+    public function listSeekers(Request $request)
+    {
+        if (!$this->assertAdmin($request->authUid)) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        $docs = $this->allDocs('seekers');
+
+        if ($request->has('verified')) {
+            $flag = filter_var($request->query('verified'), FILTER_VALIDATE_BOOLEAN);
+            $docs = array_values(array_filter($docs, fn($s) => ($s['isVerified'] ?? false) === $flag));
+        }
+
+        return response()->json([
+            'message' => 'Seekers retrieved',
+            'data'    => array_map(fn($s) => $this->formatDoc($s), $docs),
+        ], 200);
+    }
+
+    public function listEmployers(Request $request)
+    {
+        if (!$this->assertAdmin($request->authUid)) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        $docs = $this->allDocs('employers');
+
+        if ($request->has('verified')) {
+            $flag = filter_var($request->query('verified'), FILTER_VALIDATE_BOOLEAN);
+            $docs = array_values(array_filter($docs, fn($e) => ($e['isVerified'] ?? false) === $flag));
+        }
+
+        return response()->json([
+            'message' => 'Employers retrieved',
+            'data'    => array_map(fn($e) => $this->formatDoc($e), $docs),
+        ], 200);
+    }
+
+    public function listUsers(Request $request)
+    {
+        if (!$this->assertAdmin($request->authUid)) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        $seekers   = array_map(fn($s) => $this->formatDoc($s) + ['type' => 'seeker'],   $this->allDocs('seekers'));
+        $employers = array_map(fn($e) => $this->formatDoc($e) + ['type' => 'employer'],  $this->allDocs('employers'));
+
+        return response()->json([
+            'message' => 'Users retrieved',
+            'data'    => array_merge($seekers, $employers),
+        ], 200);
+    }
+
     // Reads all docs from a collection — suitable for current data volume.
     // Future: consider cached materialization for large collections.
     private function allDocs(string $collection): array

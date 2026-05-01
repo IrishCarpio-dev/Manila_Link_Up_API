@@ -151,12 +151,14 @@ class ApplicationController extends Controller
         $query = $query->orderBy('createdAt', 'DESC');
 
         if ($request->filled('startAfter')) {
-            $cursor = new Timestamp(Carbon::parse($request->startAfter)->toDateTimeImmutable());
-            $query = $query->startAfter([$cursor]);
+            $cursorSnap = $this->database->collection('applications')->document($request->startAfter)->snapshot();
+            if ($cursorSnap->exists()) {
+                $query = $query->startAfter([$cursorSnap->get('createdAt')]);
+            }
         }
 
-        $perPage = (int) $request->input('limit', 15);
-        $documents = $query->limit($perPage)->documents();
+        $perPage = (int) $request->input('limit', 5);
+        $documents = $query->limit($perPage + 1)->documents();
 
         $applications = [];
         foreach ($documents as $doc) {
@@ -166,6 +168,12 @@ class ApplicationController extends Controller
                 $applications[] = $data;
             }
         }
+
+        $hasMore = count($applications) > $perPage;
+        if ($hasMore) {
+            $applications = array_slice($applications, 0, $perPage);
+        }
+        $nextCursor = $hasMore ? end($applications)['id'] : null;
 
         // Batch-fetch jobs
         $jobIds = array_unique(array_column($applications, 'jobId'));
@@ -212,8 +220,10 @@ class ApplicationController extends Controller
         $applications = array_map([$this, 'formatDoc'], $applications);
 
         return response()->json([
-            'message' => 'Applications retrieved successfully',
-            'data'    => $applications,
+            'message'    => 'Applications retrieved successfully',
+            'data'       => $applications,
+            'hasMore'    => $hasMore,
+            'nextCursor' => $nextCursor,
         ], 200);
     }
 
@@ -253,12 +263,14 @@ class ApplicationController extends Controller
         $query = $query->orderBy('createdAt', 'DESC');
 
         if ($request->filled('startAfter')) {
-            $cursor = new Timestamp(Carbon::parse($request->startAfter)->toDateTimeImmutable());
-            $query = $query->startAfter([$cursor]);
+            $cursorSnap = $this->database->collection('applications')->document($request->startAfter)->snapshot();
+            if ($cursorSnap->exists()) {
+                $query = $query->startAfter([$cursorSnap->get('createdAt')]);
+            }
         }
 
         $perPage = (int) $request->input('limit', 15);
-        $documents = $query->limit($perPage)->documents();
+        $documents = $query->limit($perPage + 1)->documents();
 
         $applications = [];
         foreach ($documents as $doc) {
@@ -268,6 +280,12 @@ class ApplicationController extends Controller
                 $applications[] = $data;
             }
         }
+
+        $hasMore = count($applications) > $perPage;
+        if ($hasMore) {
+            $applications = array_slice($applications, 0, $perPage);
+        }
+        $nextCursor = $hasMore ? end($applications)['id'] : null;
 
         // Batch-fetch seekers
         $seekerUids = array_unique(array_column($applications, 'seekerUid'));
@@ -292,8 +310,10 @@ class ApplicationController extends Controller
         $applications = array_map([$this, 'formatDoc'], $applications);
 
         return response()->json([
-            'message' => 'Applicants retrieved successfully',
-            'data'    => $applications,
+            'message'    => 'Applicants retrieved successfully',
+            'data'       => $applications,
+            'hasMore'    => $hasMore,
+            'nextCursor' => $nextCursor,
         ], 200);
     }
 
@@ -566,12 +586,14 @@ class ApplicationController extends Controller
             ->orderBy('updatedAt', 'desc');
 
         if ($request->filled('startAfter')) {
-            $cursor = new Timestamp(Carbon::parse($request->startAfter)->toDateTimeImmutable());
-            $query  = $query->startAfter([$cursor]);
+            $cursorSnap = $this->database->collection('applications')->document($request->startAfter)->snapshot();
+            if ($cursorSnap->exists()) {
+                $query = $query->startAfter([$cursorSnap->get('updatedAt')]);
+            }
         }
 
         $perPage   = (int) $request->input('limit', 15);
-        $documents = $query->limit($perPage)->documents();
+        $documents = $query->limit($perPage + 1)->documents();
 
         $applications = [];
         foreach ($documents as $doc) {
@@ -581,6 +603,12 @@ class ApplicationController extends Controller
                 $applications[] = $data;
             }
         }
+
+        $hasMore = count($applications) > $perPage;
+        if ($hasMore) {
+            $applications = array_slice($applications, 0, $perPage);
+        }
+        $nextCursor = $hasMore ? end($applications)['id'] : null;
 
         $jobIds = array_unique(array_column($applications, 'jobId'));
         $jobs   = [];
@@ -620,14 +648,6 @@ class ApplicationController extends Controller
             }
         }
         unset($app);
-
-        $hasMore    = count($applications) >= $perPage;
-        $lastApp    = !empty($applications) ? end($applications) : null;
-        $nextCursor = ($hasMore && $lastApp)
-            ? ($lastApp['updatedAt'] instanceof Timestamp
-                ? $lastApp['updatedAt']->get()->format('c')
-                : $lastApp['updatedAt'])
-            : null;
 
         $applications = array_map([$this, 'formatDoc'], $applications);
 

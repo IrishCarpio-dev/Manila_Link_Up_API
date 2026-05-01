@@ -157,7 +157,7 @@ class ApplicationController extends Controller
             }
         }
 
-        $perPage = (int) $request->input('limit', 15);
+        $perPage = (int) $request->input('limit', 10);
         $documents = $query->limit($perPage + 1)->documents();
 
         $applications = [];

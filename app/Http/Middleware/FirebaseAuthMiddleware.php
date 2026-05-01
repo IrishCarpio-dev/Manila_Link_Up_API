@@ -32,8 +32,7 @@ class FirebaseAuthMiddleware
         try {
             $verifiedIdToken = $this->auth->verifyIdToken($token, false, 60);
             $uid = $verifiedIdToken->claims()->get('sub');
-            $role = $verifiedIdToken->claims()->get('role');
-            $request->merge(['authUid' => $uid, 'authRole' => $role]);
+            $request->merge(['authUid' => $uid]);
         } catch (\Throwable $e) {
             \Log::error('FirebaseAuthMiddleware: ' . $e->getMessage(), [
                 'exception' => get_class($e),

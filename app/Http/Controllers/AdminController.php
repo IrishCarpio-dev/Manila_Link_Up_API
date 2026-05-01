@@ -18,9 +18,13 @@ class AdminController extends Controller
         $this->database = Firebase::firestore()->database();
     }
 
-    private function assertAdmin(string $role): bool
+    private function assertAdmin(string $uid): bool
     {
-        return $role === 'admin';
+        return $this->database
+            ->collection('admins')
+            ->document($uid)
+            ->snapshot()
+            ->exists();
     }
 
     public function verifyUser(Request $request)
@@ -31,7 +35,7 @@ class AdminController extends Controller
             return response()->json(['error' => 'UID not found'], 400);
         }
 
-        if (!$this->assertAdmin($request->authRole)) {
+        if (!$this->assertAdmin($request->authUid)) {
             return response()->json(['error' => 'Unauthorized access'], 401);
         }
 
@@ -118,7 +122,7 @@ class AdminController extends Controller
 
     public function analyticsOverview(Request $request)
     {
-        if (!$this->assertAdmin($request->authRole)) {
+        if (!$this->assertAdmin($request->authUid)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -168,7 +172,7 @@ class AdminController extends Controller
 
     public function analyticsTags(Request $request)
     {
-        if (!$this->assertAdmin($request->authRole)) {
+        if (!$this->assertAdmin($request->authUid)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -220,7 +224,7 @@ class AdminController extends Controller
 
     public function analyticsFunnel(Request $request)
     {
-        if (!$this->assertAdmin($request->authRole)) {
+        if (!$this->assertAdmin($request->authUid)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -257,7 +261,7 @@ class AdminController extends Controller
 
     public function analyticsTimeseries(Request $request)
     {
-        if (!$this->assertAdmin($request->authRole)) {
+        if (!$this->assertAdmin($request->authUid)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -310,7 +314,7 @@ class AdminController extends Controller
 
     public function analyticsUsers(Request $request)
     {
-        if (!$this->assertAdmin($request->authRole)) {
+        if (!$this->assertAdmin($request->authUid)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -347,7 +351,7 @@ class AdminController extends Controller
 
     public function analyticsRatings(Request $request)
     {
-        if (!$this->assertAdmin($request->authRole)) {
+        if (!$this->assertAdmin($request->authUid)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 

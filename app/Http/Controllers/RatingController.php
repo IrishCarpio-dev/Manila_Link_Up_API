@@ -233,11 +233,9 @@ class RatingController extends Controller
             $rater = $raters[$rating['raterUid']] ?? null;
             $job   = $jobs[$rating['jobId']] ?? null;
 
-            $photoSnap = $this->database->collection('profilePhotos')->document($rating['raterUid'])->snapshot();
             $rating['rater'] = $rater ? [
-                'uid'          => $rating['raterUid'],
-                'name'         => $rater['fullName'] ?? (($rater['firstName'] ?? '') . ' ' . ($rater['lastName'] ?? '')),
-                'profilePhoto' => $photoSnap->exists() ? ($photoSnap->data()['base64'] ?? null) : null,
+                'uid'  => $rating['raterUid'],
+                'name' => $rater['fullName'] ?? (($rater['firstName'] ?? '') . ' ' . ($rater['lastName'] ?? '')),
             ] : null;
 
             $rating['job'] = $job ? [

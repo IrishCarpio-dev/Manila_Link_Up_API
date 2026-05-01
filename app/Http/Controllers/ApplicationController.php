@@ -183,18 +183,12 @@ class ApplicationController extends Controller
             $employers[$employerUid] = $snap->exists() ? $snap->data() : null;
         }
 
-        // Batch-fetch profile photos
-        $employerPhotos = [];
-        foreach ($employerUids as $employerUid) {
-            $snap = $this->database->collection('profilePhotos')->document($employerUid)->snapshot();
-            $employerPhotos[$employerUid] = $snap->exists() ? ($snap->data()['base64'] ?? null) : null;
-        }
-
         // Build response
         foreach ($applications as &$app) {
             $job = $jobs[$app['jobId']] ?? null;
             if ($job) {
-                $employerData = $employers[$job['employer']] ?? null;
+                $employerUid  = $job['employer'];
+                $employerData = $employers[$employerUid] ?? null;
                 $app['job'] = [
                     'id'          => $job['id'],
                     'title'       => $job['title'],
@@ -205,8 +199,8 @@ class ApplicationController extends Controller
                     'expiresAt'   => $job['expiresAt'],
                     'tags'        => $job['tags'] ?? [],
                     'employer'    => $employerData ? [
-                        'fullName'     => $employerData['fullName'] ?? null,
-                        'profilePhoto' => $employerPhotos[$job['employer']] ?? null,
+                        'uid'      => $employerUid,
+                        'fullName' => $employerData['fullName'] ?? null,
                     ] : null,
                 ];
             } else {
@@ -282,21 +276,15 @@ class ApplicationController extends Controller
             $snap = $this->database->collection('seekers')->document($seekerUid)->snapshot();
             $seekers[$seekerUid] = $snap->exists() ? $snap->data() : null;
         }
-        $seekerPhotos = [];
-        foreach ($seekerUids as $seekerUid) {
-            $snap = $this->database->collection('profilePhotos')->document($seekerUid)->snapshot();
-            $seekerPhotos[$seekerUid] = $snap->exists() ? ($snap->data()['base64'] ?? null) : null;
-        }
-
         foreach ($applications as &$app) {
             $seekerData = $seekers[$app['seekerUid']] ?? null;
             $app['seeker'] = $seekerData ? [
-                'firstName'    => $seekerData['firstName'] ?? null,
-                'lastName'     => $seekerData['lastName'] ?? null,
-                'mobileNumber' => $seekerData['mobileNumber'] ?? null,
+                'uid'           => $app['seekerUid'],
+                'firstName'     => $seekerData['firstName'] ?? null,
+                'lastName'      => $seekerData['lastName'] ?? null,
+                'mobileNumber'  => $seekerData['mobileNumber'] ?? null,
                 'isOpenForWork' => $seekerData['isOpenForWork'] ?? null,
-                'isVerified'   => $seekerData['isVerified'] ?? null,
-                'profilePhoto' => $seekerPhotos[$app['seekerUid']] ?? null,
+                'isVerified'    => $seekerData['isVerified'] ?? null,
             ] : null;
         }
         unset($app);
@@ -608,16 +596,11 @@ class ApplicationController extends Controller
             $employers[$employerUid] = $snap->exists() ? $snap->data() : null;
         }
 
-        $employerPhotos = [];
-        foreach ($employerUids as $employerUid) {
-            $snap                       = $this->database->collection('profilePhotos')->document($employerUid)->snapshot();
-            $employerPhotos[$employerUid] = $snap->exists() ? ($snap->data()['base64'] ?? null) : null;
-        }
-
         foreach ($applications as &$app) {
             $job = $jobs[$app['jobId']] ?? null;
             if ($job) {
-                $employerData = $employers[$job['employer']] ?? null;
+                $employerUid  = $job['employer'];
+                $employerData = $employers[$employerUid] ?? null;
                 $app['job']   = [
                     'id'          => $job['id'],
                     'title'       => $job['title'],
@@ -628,8 +611,8 @@ class ApplicationController extends Controller
                     'expiresAt'   => $job['expiresAt'],
                     'tags'        => $job['tags'] ?? [],
                     'employer'    => $employerData ? [
-                        'fullName'     => $employerData['fullName'] ?? null,
-                        'profilePhoto' => $employerPhotos[$job['employer']] ?? null,
+                        'uid'      => $employerUid,
+                        'fullName' => $employerData['fullName'] ?? null,
                     ] : null,
                 ];
             } else {

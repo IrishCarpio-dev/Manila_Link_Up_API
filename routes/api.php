@@ -17,6 +17,7 @@ use App\Http\Controllers\RatingController;
 use App\Http\Controllers\DeviceController;
 use App\Http\Controllers\ServiceTagController;
 use App\Http\Controllers\SeekerPreferencesController;
+use App\Http\Controllers\ProfilePhotoController;
 
 Route::get('/test-firebase', function (Database $database) {
     $database->getReference('test_connection')->set([
@@ -30,6 +31,7 @@ Route::get('/test-firebase', function (Database $database) {
 Route::middleware([FirebaseAuthMiddleware::class])->group(function () {
     // User
     Route::get('/user/profile', [UserController::class, 'profile']);
+    Route::post('/profile-photo', [ProfilePhotoController::class, 'show']);
 
     // Seeker
     Route::post('/seeker/signup',       [SeekerController::class, 'signUp']);

@@ -193,7 +193,7 @@ class JobController extends Controller
         }
 
         $applyPhpFilters = $phpSalaryFilter || $phpLocationFilter || $phpCompletedFilter;
-        $fetchLimit      = $applyPhpFilters ? min($perPage * 2, 100) : $perPage;
+        $fetchLimit      = min($perPage * 3, 100);
         $documents       = $query->limit($fetchLimit)->documents();
 
         $jobs = [];
@@ -215,28 +215,7 @@ class JobController extends Controller
                 }
                 return true;
             }));
-            $jobs = array_slice($jobs, 0, $perPage);
         }
-
-        $employerUids     = array_unique(array_column($jobs, 'employer'));
-        $employerProfiles = [];
-        foreach ($employerUids as $employerUid) {
-            $snap = $this->database->collection('employers')->document($employerUid)->snapshot();
-            $employerProfiles[$employerUid] = $snap->exists() ? $snap->data() : null;
-        }
-        $employerPhotos = [];
-        foreach ($employerUids as $employerUid) {
-            $snap = $this->database->collection('profilePhotos')->document($employerUid)->snapshot();
-            $employerPhotos[$employerUid] = $snap->exists() ? ($snap->data()['base64'] ?? null) : null;
-        }
-        foreach ($jobs as &$job) {
-            $profile = $employerProfiles[$job['employer']] ?? null;
-            $job['employer'] = $profile ? [
-                'fullName'     => $profile['fullName'] ?? null,
-                'profilePhoto' => $employerPhotos[$job['employer']] ?? null,
-            ] : null;
-        }
-        unset($job);
 
         $jobIds = array_column($jobs, 'id');
         $appliedJobIds = [];
@@ -253,6 +232,23 @@ class JobController extends Controller
         }
         $appliedJobIds = array_flip($appliedJobIds);
         $jobs = array_values(array_filter($jobs, fn($job) => !isset($appliedJobIds[$job['id']])));
+        $jobs = array_slice($jobs, 0, $perPage);
+
+        $employerUids     = array_unique(array_column($jobs, 'employer'));
+        $employerProfiles = [];
+        foreach ($employerUids as $employerUid) {
+            $snap = $this->database->collection('employers')->document($employerUid)->snapshot();
+            $employerProfiles[$employerUid] = $snap->exists() ? $snap->data() : null;
+        }
+        foreach ($jobs as &$job) {
+            $employerUid     = $job['employer'];
+            $profile         = $employerProfiles[$employerUid] ?? null;
+            $job['employer'] = $profile ? [
+                'uid'      => $employerUid,
+                'fullName' => $profile['fullName'] ?? null,
+            ] : null;
+        }
+        unset($job);
 
         $hasMore    = count($jobs) >= $perPage;
         $lastJob    = !empty($jobs) ? end($jobs) : null;
@@ -487,16 +483,12 @@ class JobController extends Controller
             $snap = $this->database->collection('employers')->document($employerUid)->snapshot();
             $employerProfiles[$employerUid] = $snap->exists() ? $snap->data() : null;
         }
-        $employerPhotos = [];
-        foreach ($employerUids as $employerUid) {
-            $snap = $this->database->collection('profilePhotos')->document($employerUid)->snapshot();
-            $employerPhotos[$employerUid] = $snap->exists() ? ($snap->data()['base64'] ?? null) : null;
-        }
         foreach ($jobs as &$job) {
-            $profile = $employerProfiles[$job['employer']] ?? null;
+            $employerUid     = $job['employer'];
+            $profile         = $employerProfiles[$employerUid] ?? null;
             $job['employer'] = $profile ? [
-                'fullName'     => $profile['fullName'] ?? null,
-                'profilePhoto' => $employerPhotos[$job['employer']] ?? null,
+                'uid'      => $employerUid,
+                'fullName' => $profile['fullName'] ?? null,
             ] : null;
         }
         unset($job);

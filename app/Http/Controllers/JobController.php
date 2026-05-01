@@ -8,6 +8,7 @@ use Google\Cloud\Firestore\FieldValue;
 use Google\Cloud\Core\Timestamp;
 use Carbon\Carbon;
 use Kreait\Laravel\Firebase\Facades\Firebase;
+use App\Services\NotificationService;
 
 class JobController extends Controller
 {
@@ -77,13 +78,44 @@ class JobController extends Controller
         ];
 
         $docRef  = $this->database->collection('jobs')->add($jobData);
+        $jobId   = $docRef->id();
         $snap    = $docRef->snapshot();
-        $created = array_merge($snap->data(), ['id' => $docRef->id()]);
+        $created = array_merge($snap->data(), ['id' => $jobId]);
+
+        $this->notifyMatchingSeekers($jobId, $request->title, $request->tags);
 
         return response()->json([
             'message' => 'Job created successfully',
             'data'    => $this->formatDoc($created),
         ], 201);
+    }
+
+    private function notifyMatchingSeekers(string $jobId, string $jobTitle, array $tags): void
+    {
+        if (empty($tags)) {
+            return;
+        }
+
+        $seekerDocs = $this->database
+            ->collection('seekers')
+            ->where('preferences.tags', 'array-contains-any', $tags)
+            ->where('isVerified',   '=', true)
+            ->where('isProfileSet', '=', true)
+            ->documents();
+
+        foreach ($seekerDocs as $doc) {
+            if (!$doc->exists()) {
+                continue;
+            }
+
+            NotificationService::notify(
+                $doc->id(),
+                'new_matching_job',
+                'New Job for You',
+                'A new job matching your skills was just posted: "' . $jobTitle . '".',
+                ['jobId' => $jobId]
+            );
+        }
     }
 
     public function destroy(Request $request)
@@ -378,6 +410,57 @@ class JobController extends Controller
         return response()->json([
             'message' => 'Archived jobs retrieved successfully',
             'data'    => $allJobs,
+        ], 200);
+    }
+
+    public function show(Request $request, string $id)
+    {
+        $uid = $request->authUid;
+
+        $snap = $this->database->collection('jobs')->document($id)->snapshot();
+
+        if (!$snap->exists()) {
+            return response()->json(['error' => 'Job not found'], 404);
+        }
+
+        $data       = $snap->data();
+        $data['id'] = $snap->id();
+
+        $employerUid         = $data['employer'];
+        $employerSnap        = $this->database->collection('employers')->document($employerUid)->snapshot();
+        $data['employer']    = $employerSnap->exists() ? $employerSnap->data() : null;
+
+        $isOwnerView = $uid && $uid === $employerUid && $request->authRole === 'employer';
+
+        if ($isOwnerView) {
+            $appId = $data['hiredApplicationId'] ?? null;
+            $app   = null;
+
+            if ($appId) {
+                $appSnap = $this->database->collection('applications')->document($appId)->snapshot();
+                $app     = $appSnap->exists() ? array_merge($appSnap->data(), ['id' => $appSnap->id()]) : null;
+            }
+
+            if ($app && ($app['status'] ?? 0) >= 5) {
+                $seekerSnap = $this->database->collection('seekers')->document($app['seekerUid'])->snapshot();
+                $seekerData = $seekerSnap->exists() ? $seekerSnap->data() : null;
+                $data['hiredApplication'] = [
+                    'id'                  => $app['id'],
+                    'status'              => $app['status'],
+                    'employerCompletedAt' => $app['employerCompletedAt'] ?? null,
+                    'seeker'              => $seekerData ? [
+                        'firstName' => $seekerData['firstName'] ?? null,
+                        'lastName'  => $seekerData['lastName']  ?? null,
+                    ] : null,
+                ];
+            } else {
+                $data['hiredApplication'] = null;
+            }
+        }
+
+        return response()->json([
+            'message' => 'Job retrieved successfully',
+            'data'    => $this->formatDoc($data),
         ], 200);
     }
 

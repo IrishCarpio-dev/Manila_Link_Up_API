@@ -7,7 +7,7 @@ use Google\Cloud\Firestore\FieldValue;
 use Google\Cloud\Core\Timestamp;
 use Carbon\Carbon;
 use Kreait\Laravel\Firebase\Facades\Firebase;
-use App\Services\FcmNotifier;
+use App\Services\NotificationService;
 
 class RatingController extends Controller
 {
@@ -123,11 +123,26 @@ class RatingController extends Controller
 
         $this->syncUserRatingStats($rateeUid, $rateeRole, (int) $request->score, true);
 
-        FcmNotifier::sendToUser(
+        $raterCollection = $raterRole === 'seeker' ? 'seekers' : 'employers';
+        $raterSnap       = $this->database->collection($raterCollection)->document($uid)->snapshot();
+        $raterData       = $raterSnap->exists() ? $raterSnap->data() : [];
+        $raterName       = $raterRole === 'seeker'
+            ? trim(($raterData['firstName'] ?? '') . ' ' . ($raterData['lastName'] ?? ''))
+            : ($raterData['fullName'] ?? '');
+
+        $jobLabel = $job['title'] ?? $app['jobId'];
+
+        NotificationService::notify(
             $rateeUid,
-            'New Rating',
-            'You received a new rating!',
-            ['type' => 'rating_received', 'applicationId' => $request->applicationId]
+            'rating_received',
+            'New Rating Notification',
+            "You received a rating from {$raterName} for {$jobLabel}.",
+            [
+                'applicationId' => $request->applicationId,
+                'jobId'         => $app['jobId'],
+                'jobTitle'      => $job['title'] ?? '',
+                'raterName'     => $raterName,
+            ]
         );
 
         $snap       = $docRef->snapshot();

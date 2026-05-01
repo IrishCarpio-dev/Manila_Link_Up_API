@@ -344,6 +344,10 @@ class ApplicationController extends Controller
             return response()->json(['error' => 'Status is already set to this value'], 422);
         }
 
+        $employerSnap = $this->database->collection('employers')->document($uid)->snapshot();
+        $employer     = $employerSnap->exists() ? $employerSnap->data() : [];
+        $employerName = trim(($employer['firstName'] ?? '') . ' ' . ($employer['lastName'] ?? ''));
+
         // INTERVIEW (2): create chat if not exists
         if ($newStatus === 2) {
             $chatId  = $app['jobId'] . '_' . $app['seekerUid'];
@@ -379,6 +383,7 @@ class ApplicationController extends Controller
                 [
                     'applicationId' => $request->applicationId,
                     'jobId'         => $app['jobId'],
+                    'employerName'  => $employerName,
                     'jobTitle'      => $job['title'] ?? '',
                 ]
             );

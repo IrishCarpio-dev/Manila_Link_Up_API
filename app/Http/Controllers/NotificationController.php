@@ -100,7 +100,7 @@ class NotificationController extends Controller
             'id'         => $id,
             'type'       => $data['type'] ?? null,
             'title'      => $data['title'] ?? null,
-            'message'    => $data['body'] ?? null,
+            'body'       => $data['body'] ?? null,
             'is_read'    => ($data['readAt'] ?? null) !== null,
             'created_at' => $createdAt instanceof Timestamp
                 ? $createdAt->get()->format('c')

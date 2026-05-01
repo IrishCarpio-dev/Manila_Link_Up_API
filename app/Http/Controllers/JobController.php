@@ -261,6 +261,22 @@ class JobController extends Controller
         }
         unset($job);
 
+        $jobIds = array_column($jobs, 'id');
+        $appliedJobIds = [];
+        foreach (array_chunk($jobIds, 30) as $chunk) {
+            $appDocs = $this->database->collection('applications')
+                ->where('seekerUid', '=', $uid)
+                ->where('jobId', 'in', $chunk)
+                ->documents();
+            foreach ($appDocs as $appDoc) {
+                if ($appDoc->exists()) {
+                    $appliedJobIds[] = $appDoc->data()['jobId'];
+                }
+            }
+        }
+        $appliedJobIds = array_flip($appliedJobIds);
+        $jobs = array_values(array_filter($jobs, fn($job) => !isset($appliedJobIds[$job['id']])));
+
         $hasMore    = count($jobs) >= $perPage;
         $lastJob    = !empty($jobs) ? end($jobs) : null;
         $nextCursor = ($hasMore && $lastJob)

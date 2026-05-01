@@ -25,7 +25,7 @@ class RatingController extends Controller
         validator($request->all(), [
             'applicationId' => ['required', 'string'],
             'score'         => ['required', 'integer', 'min:1', 'max:5'],
-            'comment'       => ['sometimes', 'string', 'max:1000'],
+            'comment'       => ['sometimes', 'nullable', 'string', 'max:1000'],
         ])->validate();
 
         $appSnap = $this->database->collection('applications')->document($request->applicationId)->snapshot();

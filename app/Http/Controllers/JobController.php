@@ -381,6 +381,23 @@ class JobController extends Controller
             $hiredSeekers[$seekerUid] = $snap->exists() ? $snap->data() : null;
         }
 
+        $completedAppIds = array_values(array_filter(
+            array_map(fn($a) => ($a['status'] ?? null) === 6 ? $a['id'] : null, $hiredApps)
+        ));
+        $employerRatings = [];
+        foreach (array_chunk($completedAppIds, 30) as $chunk) {
+            $ratingDocs = $this->database->collection('ratings')
+                ->where('applicationId', 'in', $chunk)
+                ->where('raterRole', '=', 'employer')
+                ->documents();
+            foreach ($ratingDocs as $doc) {
+                if ($doc->exists()) {
+                    $data = $doc->data();
+                    $employerRatings[$data['applicationId']] = $data;
+                }
+            }
+        }
+
         foreach ($allJobs as &$job) {
             $appId = $job['hiredApplicationId'] ?? null;
             $app   = $appId ? ($hiredApps[$appId] ?? null) : null;
@@ -397,8 +414,24 @@ class JobController extends Controller
                         'lastName'  => $seekerData['lastName']  ?? null,
                     ] : null,
                 ];
+
+                if ($app['status'] === 6) {
+                    $rating = $employerRatings[$app['id']] ?? null;
+                    if ($rating === null) {
+                        $job['isRateEnabled'] = true;
+                    } else {
+                        $createdAt     = $rating['createdAt'];
+                        $createdAtTime = $createdAt instanceof Timestamp
+                            ? Carbon::createFromTimestamp($createdAt->get()->getTimestamp())
+                            : Carbon::parse($createdAt);
+                        $job['isRateEnabled'] = $createdAtTime->diffInHours(Carbon::now()) < 24;
+                    }
+                } else {
+                    $job['isRateEnabled'] = false;
+                }
             } else {
                 $job['hiredApplication'] = null;
+                $job['isRateEnabled']    = false;
             }
         }
         unset($job);

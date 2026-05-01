@@ -700,6 +700,20 @@ class ApplicationController extends Controller
             $employers[$employerUid] = $snap->exists() ? $snap->data() : null;
         }
 
+        $seekerRatings = [];
+        foreach (array_chunk(array_column($applications, 'id'), 30) as $chunk) {
+            $ratingDocs = $this->database->collection('ratings')
+                ->where('applicationId', 'in', $chunk)
+                ->where('raterRole', '=', 'seeker')
+                ->documents();
+            foreach ($ratingDocs as $doc) {
+                if ($doc->exists()) {
+                    $data = $doc->data();
+                    $seekerRatings[$data['applicationId']] = $data;
+                }
+            }
+        }
+
         foreach ($applications as &$app) {
             $job = $jobs[$app['jobId']] ?? null;
             if ($job) {
@@ -721,6 +735,17 @@ class ApplicationController extends Controller
                 ];
             } else {
                 $app['job'] = null;
+            }
+
+            $rating = $seekerRatings[$app['id']] ?? null;
+            if ($rating === null) {
+                $app['isRateEnabled'] = true;
+            } else {
+                $createdAt     = $rating['createdAt'];
+                $createdAtTime = $createdAt instanceof Timestamp
+                    ? Carbon::createFromTimestamp($createdAt->get()->getTimestamp())
+                    : Carbon::parse($createdAt);
+                $app['isRateEnabled'] = $createdAtTime->diffInHours(Carbon::now()) < 24;
             }
         }
         unset($app);

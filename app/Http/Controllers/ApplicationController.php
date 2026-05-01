@@ -445,9 +445,30 @@ class ApplicationController extends Controller
                 }
             }
 
+            // Create chat if applicant skipped interview
+            $chatId  = $app['jobId'] . '_' . $app['seekerUid'];
+            $chatRef = $this->database->collection('chats')->document($chatId);
+
+            if (!$chatRef->snapshot()->exists()) {
+                $chatRef->set([
+                    'jobId'            => $app['jobId'],
+                    'seekerUid'        => $app['seekerUid'],
+                    'employerUid'      => $uid,
+                    'applicationId'    => $request->applicationId,
+                    'lastMessage'      => null,
+                    'lastMessageAt'    => null,
+                    'unreadBySeeker'   => 0,
+                    'unreadByEmployer' => 0,
+                    'hiddenBy'         => [],
+                    'createdAt'        => FieldValue::serverTimestamp(),
+                    'updatedAt'        => FieldValue::serverTimestamp(),
+                ]);
+            }
+
             // Update hired application
             $appRef->update([
                 ['path' => 'status',    'value' => $newStatus],
+                ['path' => 'chatId',    'value' => $chatId],
                 ['path' => 'updatedAt', 'value' => FieldValue::serverTimestamp()],
             ]);
 

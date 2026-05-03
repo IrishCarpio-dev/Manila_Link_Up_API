@@ -96,9 +96,8 @@ class ChatController extends Controller
             $job           = $jobs[$chat['jobId']] ?? null;
 
             $chat['counterpart'] = $profile ? [
-                'uid'             => $cUid,
-                'name'            => $profile['fullName'] ?? (($profile['firstName'] ?? '') . ' ' . ($profile['lastName'] ?? '')),
-                'profilePhotoUrl' => $profile['profilePhotoUrl'] ?? null,
+                'uid'  => $cUid,
+                'name' => $profile['fullName'] ?? (($profile['firstName'] ?? '') . ' ' . ($profile['lastName'] ?? '')),
             ] : null;
 
             $chat['job'] = $job ? [

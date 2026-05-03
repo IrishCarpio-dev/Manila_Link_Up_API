@@ -25,20 +25,28 @@ class UserController extends Controller
         $userTypes = ['admins', 'employers', 'seekers'];
         $profiles = [];
 
-        foreach ($userTypes as $type)
-            {
-                $data = $this->firestore
-                    ->collection($type)
-                    ->document($uid)
-                    ->snapshot()
-                    ->data();
+        foreach ($userTypes as $type) {
+            $data = $this->firestore
+                ->collection($type)
+                ->document($uid)
+                ->snapshot()
+                ->data();
 
-                if ($data) {
-                    $profiles[$type] = $data;
+            if ($data) {
+                $profiles[$type] = $data;
+            }
+        }
+
+        if (!empty($profiles)) {
+            $photoSnap = $this->firestore->collection('profilePhotos')->document($uid)->snapshot();
+            $profilePhoto = $photoSnap->exists() ? ($photoSnap->data()['base64'] ?? null) : null;
+
+            foreach (['seekers', 'employers'] as $type) {
+                if (isset($profiles[$type])) {
+                    $profiles[$type]['profilePhoto'] = $profilePhoto;
                 }
             }
 
-        if (!empty($profiles)) {
             return response()->json([
                 'message' => 'User profile retrieved successfully',
                 'data'    => $this->formatDoc($profiles),

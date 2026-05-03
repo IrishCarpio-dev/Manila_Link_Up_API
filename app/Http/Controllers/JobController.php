@@ -225,7 +225,7 @@ class JobController extends Controller
         }
 
         $applyPhpFilters = $phpSalaryFilter || $phpLocationFilter || $phpCompletedFilter;
-        $fetchLimit      = $applyPhpFilters ? min($perPage * 2, 100) : $perPage;
+        $fetchLimit      = min($perPage * 3, 100);
         $documents       = $query->limit($fetchLimit)->documents();
 
         $jobs = [];
@@ -247,19 +247,7 @@ class JobController extends Controller
                 }
                 return true;
             }));
-            $jobs = array_slice($jobs, 0, $perPage);
         }
-
-        $employerUids     = array_unique(array_column($jobs, 'employer'));
-        $employerProfiles = [];
-        foreach ($employerUids as $employerUid) {
-            $snap = $this->database->collection('employers')->document($employerUid)->snapshot();
-            $employerProfiles[$employerUid] = $snap->exists() ? $snap->data() : null;
-        }
-        foreach ($jobs as &$job) {
-            $job['employer'] = $employerProfiles[$job['employer']] ?? null;
-        }
-        unset($job);
 
         $jobIds = array_column($jobs, 'id');
         $appliedJobIds = [];
@@ -276,6 +264,23 @@ class JobController extends Controller
         }
         $appliedJobIds = array_flip($appliedJobIds);
         $jobs = array_values(array_filter($jobs, fn($job) => !isset($appliedJobIds[$job['id']])));
+        $jobs = array_slice($jobs, 0, $perPage);
+
+        $employerUids     = array_unique(array_column($jobs, 'employer'));
+        $employerProfiles = [];
+        foreach ($employerUids as $employerUid) {
+            $snap = $this->database->collection('employers')->document($employerUid)->snapshot();
+            $employerProfiles[$employerUid] = $snap->exists() ? $snap->data() : null;
+        }
+        foreach ($jobs as &$job) {
+            $employerUid     = $job['employer'];
+            $profile         = $employerProfiles[$employerUid] ?? null;
+            $job['employer'] = $profile ? [
+                'uid'      => $employerUid,
+                'fullName' => $profile['fullName'] ?? null,
+            ] : null;
+        }
+        unset($job);
 
         $hasMore    = count($jobs) >= $perPage;
         $lastJob    = !empty($jobs) ? end($jobs) : null;
@@ -475,8 +480,9 @@ class JobController extends Controller
             'employer'      => ['sometimes', 'string'],
             'minSalary'     => ['sometimes', 'numeric', 'min:0'],
             'maxSalary'     => ['sometimes', 'numeric', 'min:0'],
-            'startAfter'    => ['sometimes', 'string'],
-            'tags'          => ['sometimes', 'array', 'max:10'],
+            'startAfter'         => ['sometimes', 'string'],
+            'startAfterExpiresAt' => ['sometimes', 'string'],
+            'tags'               => ['sometimes', 'array', 'max:10'],
             'tags.*'        => ['string'],
         ])->validate();
 
@@ -531,19 +537,24 @@ class JobController extends Controller
         }
 
         if ($request->filled('startAfter')) {
-            $startAfterValue = $request->startAfter;
+            $primaryValue = $request->startAfter;
 
             if ($sortBy === 'salary') {
-                $startAfterValue = (float) $startAfterValue;
+                $primaryValue = (float) $primaryValue;
             } elseif (in_array($sortBy, ['createdAt', 'expiresAt'])) {
-                $startAfterValue = new Timestamp(Carbon::parse($startAfterValue)->toDateTimeImmutable());
+                $primaryValue = new Timestamp(Carbon::parse($primaryValue)->toDateTimeImmutable());
             }
 
-            $query = $query->startAfter([$startAfterValue]);
+            if ($sortBy !== 'expiresAt' && $request->filled('startAfterExpiresAt')) {
+                $expiresAtValue = new Timestamp(Carbon::parse($request->startAfterExpiresAt)->toDateTimeImmutable());
+                $query = $query->startAfter([$primaryValue, $expiresAtValue]);
+            } else {
+                $query = $query->startAfter([$primaryValue]);
+            }
         }
 
         $perPage   = (int) $request->input('limit', 15);
-        $query     = $query->limit($perPage);
+        $query     = $query->limit($perPage + 1);
         $documents = $query->documents();
         $jobs      = [];
 
@@ -555,17 +566,24 @@ class JobController extends Controller
             }
         }
 
+        $hasMore = count($jobs) > $perPage;
+        if ($hasMore) {
+            array_pop($jobs);
+        }
+
         $employerUids    = array_unique(array_column($jobs, 'employer'));
         $employerProfiles = [];
         foreach ($employerUids as $employerUid) {
-            $snap = $this->database
-                ->collection('employers')
-                ->document($employerUid)
-                ->snapshot();
+            $snap = $this->database->collection('employers')->document($employerUid)->snapshot();
             $employerProfiles[$employerUid] = $snap->exists() ? $snap->data() : null;
         }
         foreach ($jobs as &$job) {
-            $job['employer'] = $employerProfiles[$job['employer']] ?? null;
+            $employerUid     = $job['employer'];
+            $profile         = $employerProfiles[$employerUid] ?? null;
+            $job['employer'] = $profile ? [
+                'uid'      => $employerUid,
+                'fullName' => $profile['fullName'] ?? null,
+            ] : null;
         }
         unset($job);
 
@@ -608,11 +626,28 @@ class JobController extends Controller
             unset($job);
         }
 
+        $lastJob    = !empty($jobs) ? end($jobs) : null;
+        $nextCursor = null;
+        if ($hasMore && $lastJob) {
+            $primaryVal   = $lastJob[$sortBy] ?? null;
+            $expiresAtVal = $lastJob['expiresAt'] ?? null;
+            $nextCursor = [
+                'primary'   => $primaryVal instanceof Timestamp
+                    ? $primaryVal->get()->format('c')
+                    : $primaryVal,
+                'expiresAt' => $expiresAtVal instanceof Timestamp
+                    ? $expiresAtVal->get()->format('c')
+                    : $expiresAtVal,
+            ];
+        }
+
         $jobs = array_map([$this, 'formatDoc'], $jobs);
 
         return response()->json([
-            'message' => 'Jobs retrieved successfully',
-            'data'    => $jobs,
+            'message'    => 'Jobs retrieved successfully',
+            'data'       => $jobs,
+            'hasMore'    => $hasMore,
+            'nextCursor' => $nextCursor,
         ], 200);
     }
 

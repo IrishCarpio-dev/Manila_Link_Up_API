@@ -167,12 +167,14 @@ class ApplicationController extends Controller
         $query = $query->orderBy('createdAt', 'DESC');
 
         if ($request->filled('startAfter')) {
-            $cursor = new Timestamp(Carbon::parse($request->startAfter)->toDateTimeImmutable());
-            $query = $query->startAfter([$cursor]);
+            $cursorSnap = $this->database->collection('applications')->document($request->startAfter)->snapshot();
+            if ($cursorSnap->exists()) {
+                $query = $query->startAfter([$cursorSnap->get('createdAt')]);
+            }
         }
 
-        $perPage = (int) $request->input('limit', 15);
-        $documents = $query->limit($perPage)->documents();
+        $perPage = (int) $request->input('limit', 10);
+        $documents = $query->limit($perPage + 1)->documents();
 
         $applications = [];
         foreach ($documents as $doc) {
@@ -182,6 +184,12 @@ class ApplicationController extends Controller
                 $applications[] = $data;
             }
         }
+
+        $hasMore = count($applications) > $perPage;
+        if ($hasMore) {
+            $applications = array_slice($applications, 0, $perPage);
+        }
+        $nextCursor = $hasMore ? end($applications)['id'] : null;
 
         // Batch-fetch jobs
         $jobIds = array_unique(array_column($applications, 'jobId'));
@@ -203,7 +211,8 @@ class ApplicationController extends Controller
         foreach ($applications as &$app) {
             $job = $jobs[$app['jobId']] ?? null;
             if ($job) {
-                $employerData = $employers[$job['employer']] ?? null;
+                $employerUid  = $job['employer'];
+                $employerData = $employers[$employerUid] ?? null;
                 $app['job'] = [
                     'id'          => $job['id'],
                     'title'       => $job['title'],
@@ -214,8 +223,8 @@ class ApplicationController extends Controller
                     'expiresAt'   => $job['expiresAt'],
                     'tags'        => $job['tags'] ?? [],
                     'employer'    => $employerData ? [
-                        'fullName'        => $employerData['fullName'] ?? null,
-                        'profilePhotoUrl' => $employerData['profilePhotoUrl'] ?? null,
+                        'uid'      => $employerUid,
+                        'fullName' => $employerData['fullName'] ?? null,
                     ] : null,
                 ];
             } else {
@@ -227,8 +236,10 @@ class ApplicationController extends Controller
         $applications = array_map([$this, 'formatDoc'], $applications);
 
         return response()->json([
-            'message' => 'Applications retrieved successfully',
-            'data'    => $applications,
+            'message'    => 'Applications retrieved successfully',
+            'data'       => $applications,
+            'hasMore'    => $hasMore,
+            'nextCursor' => $nextCursor,
         ], 200);
     }
 
@@ -268,12 +279,14 @@ class ApplicationController extends Controller
         $query = $query->orderBy('createdAt', 'DESC');
 
         if ($request->filled('startAfter')) {
-            $cursor = new Timestamp(Carbon::parse($request->startAfter)->toDateTimeImmutable());
-            $query = $query->startAfter([$cursor]);
+            $cursorSnap = $this->database->collection('applications')->document($request->startAfter)->snapshot();
+            if ($cursorSnap->exists()) {
+                $query = $query->startAfter([$cursorSnap->get('createdAt')]);
+            }
         }
 
         $perPage = (int) $request->input('limit', 15);
-        $documents = $query->limit($perPage)->documents();
+        $documents = $query->limit($perPage + 1)->documents();
 
         $applications = [];
         foreach ($documents as $doc) {
@@ -284,6 +297,12 @@ class ApplicationController extends Controller
             }
         }
 
+        $hasMore = count($applications) > $perPage;
+        if ($hasMore) {
+            $applications = array_slice($applications, 0, $perPage);
+        }
+        $nextCursor = $hasMore ? end($applications)['id'] : null;
+
         // Batch-fetch seekers
         $seekerUids = array_unique(array_column($applications, 'seekerUid'));
         $seekers = [];
@@ -291,18 +310,26 @@ class ApplicationController extends Controller
             $snap = $this->database->collection('seekers')->document($seekerUid)->snapshot();
             $seekers[$seekerUid] = $snap->exists() ? $snap->data() : null;
         }
-
         foreach ($applications as &$app) {
             $seekerData = $seekers[$app['seekerUid']] ?? null;
-            $app['seeker'] = $seekerData ?? null;
+            $app['seeker'] = $seekerData ? [
+                'uid'           => $app['seekerUid'],
+                'firstName'     => $seekerData['firstName'] ?? null,
+                'lastName'      => $seekerData['lastName'] ?? null,
+                'mobileNumber'  => $seekerData['mobileNumber'] ?? null,
+                'isOpenForWork' => $seekerData['isOpenForWork'] ?? null,
+                'isVerified'    => $seekerData['isVerified'] ?? null,
+            ] : null;
         }
         unset($app);
 
         $applications = array_map([$this, 'formatDoc'], $applications);
 
         return response()->json([
-            'message' => 'Applicants retrieved successfully',
-            'data'    => $applications,
+            'message'    => 'Applicants retrieved successfully',
+            'data'       => $applications,
+            'hasMore'    => $hasMore,
+            'nextCursor' => $nextCursor,
         ], 200);
     }
 
@@ -418,9 +445,30 @@ class ApplicationController extends Controller
                 }
             }
 
+            // Create chat if applicant skipped interview
+            $chatId  = $app['jobId'] . '_' . $app['seekerUid'];
+            $chatRef = $this->database->collection('chats')->document($chatId);
+
+            if (!$chatRef->snapshot()->exists()) {
+                $chatRef->set([
+                    'jobId'            => $app['jobId'],
+                    'seekerUid'        => $app['seekerUid'],
+                    'employerUid'      => $uid,
+                    'applicationId'    => $request->applicationId,
+                    'lastMessage'      => null,
+                    'lastMessageAt'    => null,
+                    'unreadBySeeker'   => 0,
+                    'unreadByEmployer' => 0,
+                    'hiddenBy'         => [],
+                    'createdAt'        => FieldValue::serverTimestamp(),
+                    'updatedAt'        => FieldValue::serverTimestamp(),
+                ]);
+            }
+
             // Update hired application
             $appRef->update([
                 ['path' => 'status',    'value' => $newStatus],
+                ['path' => 'chatId',    'value' => $chatId],
                 ['path' => 'updatedAt', 'value' => FieldValue::serverTimestamp()],
             ]);
 
@@ -614,12 +662,14 @@ class ApplicationController extends Controller
             ->orderBy('updatedAt', 'desc');
 
         if ($request->filled('startAfter')) {
-            $cursor = new Timestamp(Carbon::parse($request->startAfter)->toDateTimeImmutable());
-            $query  = $query->startAfter([$cursor]);
+            $cursorSnap = $this->database->collection('applications')->document($request->startAfter)->snapshot();
+            if ($cursorSnap->exists()) {
+                $query = $query->startAfter([$cursorSnap->get('updatedAt')]);
+            }
         }
 
         $perPage   = (int) $request->input('limit', 15);
-        $documents = $query->limit($perPage)->documents();
+        $documents = $query->limit($perPage + 1)->documents();
 
         $applications = [];
         foreach ($documents as $doc) {
@@ -629,6 +679,12 @@ class ApplicationController extends Controller
                 $applications[] = $data;
             }
         }
+
+        $hasMore = count($applications) > $perPage;
+        if ($hasMore) {
+            $applications = array_slice($applications, 0, $perPage);
+        }
+        $nextCursor = $hasMore ? end($applications)['id'] : null;
 
         $jobIds = array_unique(array_column($applications, 'jobId'));
         $jobs   = [];
@@ -640,14 +696,15 @@ class ApplicationController extends Controller
         $employerUids = array_unique(array_filter(array_map(fn($j) => $j['employer'] ?? null, $jobs)));
         $employers    = [];
         foreach ($employerUids as $employerUid) {
-            $snap                  = $this->database->collection('employers')->document($employerUid)->snapshot();
+            $snap                    = $this->database->collection('employers')->document($employerUid)->snapshot();
             $employers[$employerUid] = $snap->exists() ? $snap->data() : null;
         }
 
         foreach ($applications as &$app) {
             $job = $jobs[$app['jobId']] ?? null;
             if ($job) {
-                $employerData = $employers[$job['employer']] ?? null;
+                $employerUid  = $job['employer'];
+                $employerData = $employers[$employerUid] ?? null;
                 $app['job']   = [
                     'id'          => $job['id'],
                     'title'       => $job['title'],
@@ -658,8 +715,8 @@ class ApplicationController extends Controller
                     'expiresAt'   => $job['expiresAt'],
                     'tags'        => $job['tags'] ?? [],
                     'employer'    => $employerData ? [
-                        'fullName'        => $employerData['fullName'] ?? null,
-                        'profilePhotoUrl' => $employerData['profilePhotoUrl'] ?? null,
+                        'uid'      => $employerUid,
+                        'fullName' => $employerData['fullName'] ?? null,
                     ] : null,
                 ];
             } else {
@@ -667,14 +724,6 @@ class ApplicationController extends Controller
             }
         }
         unset($app);
-
-        $hasMore    = count($applications) >= $perPage;
-        $lastApp    = !empty($applications) ? end($applications) : null;
-        $nextCursor = ($hasMore && $lastApp)
-            ? ($lastApp['updatedAt'] instanceof Timestamp
-                ? $lastApp['updatedAt']->get()->format('c')
-                : $lastApp['updatedAt'])
-            : null;
 
         $applications = array_map([$this, 'formatDoc'], $applications);
 

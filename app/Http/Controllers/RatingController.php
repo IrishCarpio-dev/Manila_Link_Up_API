@@ -249,9 +249,8 @@ class RatingController extends Controller
             $job   = $jobs[$rating['jobId']] ?? null;
 
             $rating['rater'] = $rater ? [
-                'uid'             => $rating['raterUid'],
-                'name'            => $rater['fullName'] ?? (($rater['firstName'] ?? '') . ' ' . ($rater['lastName'] ?? '')),
-                'profilePhotoUrl' => $rater['profilePhotoUrl'] ?? null,
+                'uid'  => $rating['raterUid'],
+                'name' => $rater['fullName'] ?? (($rater['firstName'] ?? '') . ' ' . ($rater['lastName'] ?? '')),
             ] : null;
 
             $rating['job'] = $job ? [

@@ -319,6 +319,9 @@ class ApplicationController extends Controller
                 'mobileNumber'  => $seekerData['mobileNumber'] ?? null,
                 'isOpenForWork' => $seekerData['isOpenForWork'] ?? null,
                 'isVerified'    => $seekerData['isVerified'] ?? null,
+                'location'      => $seekerData['location'] ?? null,
+                'ratingCount'   => $seekerData['ratingCount'] ?? null,
+                'bayesianAvg'   => $seekerData['bayesianAvg'] ?? null,
             ] : null;
         }
         unset($app);
@@ -641,20 +644,31 @@ class ApplicationController extends Controller
 
     public function seekerCompletedJobs(Request $request)
     {
-        $uid = $request->authUid;
+        $authUid  = $request->authUid;
+        $authRole = $request->authRole;
 
-        if (!$uid) {
+        if (!$authUid) {
             return response()->json(['error' => 'UID not found'], 400);
         }
 
-        if ($request->authRole !== 'seeker') {
-            return response()->json(['error' => 'Only seekers can access this endpoint'], 403);
+        if (!in_array($authRole, ['seeker', 'employer'])) {
+            return response()->json(['error' => 'Unauthorized role'], 403);
         }
 
         validator($request->all(), [
+            'uid'        => ['sometimes', 'string'],
             'limit'      => ['sometimes', 'integer', 'min:1', 'max:50'],
             'startAfter' => ['sometimes', 'string'],
         ])->validate();
+
+        if ($authRole === 'seeker') {
+            $uid = $authUid;
+        } else {
+            if (!$request->filled('uid')) {
+                return response()->json(['error' => 'uid is required for employers'], 422);
+            }
+            $uid = $request->input('uid');
+        }
 
         $query = $this->database->collection('applications')
             ->where('seekerUid', '=', $uid)
@@ -700,11 +714,12 @@ class ApplicationController extends Controller
             $employers[$employerUid] = $snap->exists() ? $snap->data() : null;
         }
 
+        $raterRole    = $authRole === 'employer' ? 'employer' : 'seeker';
         $seekerRatings = [];
         foreach (array_chunk(array_column($applications, 'id'), 30) as $chunk) {
             $ratingDocs = $this->database->collection('ratings')
                 ->where('applicationId', 'in', $chunk)
-                ->where('raterRole', '=', 'seeker')
+                ->where('raterRole', '=', $raterRole)
                 ->documents();
             foreach ($ratingDocs as $doc) {
                 if ($doc->exists()) {

@@ -439,6 +439,58 @@ class AdminController extends Controller
         ], 200);
     }
 
+    public function pendingVerifications(Request $request)
+    {
+        if (!$this->assertAdmin($request->authUid)) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        $pending = [];
+
+        foreach ($this->allDocs('seekers') as $doc) {
+            if (($doc['isProfileSet'] ?? false) && !($doc['isVerified'] ?? false) && ($doc['rejectedAt'] ?? null) === null) {
+                $pending[] = [
+                    'uid'             => $doc['id'],
+                    'userType'        => 'seeker',
+                    'firstName'       => $doc['firstName'] ?? null,
+                    'lastName'        => $doc['lastName'] ?? null,
+                    'email'           => $doc['email'] ?? null,
+                    'validIdUrl'      => $doc['validIdUrl'] ?? null,
+                    'clearanceUrl'    => $doc['clearanceUrl'] ?? null,
+                    'profilePhotoUrl' => $doc['profilePhotoUrl'] ?? null,
+                    'updatedAt'       => $doc['updatedAt'] ?? null,
+                ];
+            }
+        }
+
+        foreach ($this->allDocs('employers') as $doc) {
+            if (($doc['isProfileSet'] ?? false) && !($doc['isVerified'] ?? false) && ($doc['rejectedAt'] ?? null) === null) {
+                $pending[] = [
+                    'uid'             => $doc['id'],
+                    'userType'        => 'employer',
+                    'firstName'       => $doc['fullName'] ?? null,
+                    'lastName'        => null,
+                    'email'           => $doc['email'] ?? null,
+                    'validIdUrl'      => $doc['validIdUrl'] ?? null,
+                    'clearanceUrl'    => $doc['clearanceUrl'] ?? null,
+                    'profilePhotoUrl' => $doc['profilePhotoUrl'] ?? null,
+                    'updatedAt'       => $doc['updatedAt'] ?? null,
+                ];
+            }
+        }
+
+        usort($pending, function ($a, $b) {
+            $tsA = $a['updatedAt'] instanceof Timestamp ? $a['updatedAt']->get()->getTimestamp() : 0;
+            $tsB = $b['updatedAt'] instanceof Timestamp ? $b['updatedAt']->get()->getTimestamp() : 0;
+            return $tsA <=> $tsB;
+        });
+
+        return response()->json([
+            'message' => 'Pending verifications retrieved',
+            'data'    => array_map(fn($item) => $this->formatDoc($item), $pending),
+        ], 200);
+    }
+
     // Reads all docs from a collection — suitable for current data volume.
     // Future: consider cached materialization for large collections.
     private function allDocs(string $collection): array

@@ -9,6 +9,7 @@ use Google\Cloud\Core\Timestamp;
 use Carbon\Carbon;
 use Kreait\Laravel\Firebase\Facades\Firebase;
 use App\Services\FileUploader;
+use App\Services\NotificationService;
 
 class EmployerController extends Controller
 {
@@ -139,10 +140,25 @@ class EmployerController extends Controller
             ['path' => 'clearanceUrl', 'value' => $clearanceUrl],
             ['path' => 'validIdUrl', 'value' => $validIdUrl],
             ['path' => 'isProfileSet', 'value' => TRUE],
-            ['path' => 'updatedAt', 'value' => FieldValue::serverTimestamp()]
+            ['path' => 'rejectedAt',  'value' => null],
+            ['path' => 'updatedAt',   'value' => FieldValue::serverTimestamp()]
         ];
 
         $reference->update($newElement);
+
+        $firstName  = $snapshot->data()['firstName'] ?? '';
+        $lastName   = $snapshot->data()['lastName'] ?? '';
+        $adminDocs  = $this->database->collection('admins')->documents();
+        foreach ($adminDocs as $adminDoc) {
+            if (!$adminDoc->exists()) continue;
+            NotificationService::notify(
+                $adminDoc->id(),
+                'verification_submitted',
+                'New Verification Request',
+                "{$firstName} {$lastName} submitted documents for review.",
+                ['userUid' => $uid, 'userType' => 'employer']
+            );
+        }
 
         $updated = $reference->snapshot();
 

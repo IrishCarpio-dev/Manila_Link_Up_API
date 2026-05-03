@@ -149,10 +149,25 @@ class SeekerController extends Controller
             ['path' => 'clearanceUrl', 'value' => $clearanceUrl],
             ['path' => 'validIdUrl', 'value' => $validIdUrl],
             ['path' => 'isProfileSet', 'value' => TRUE],
-            ['path' => 'updatedAt', 'value' => FieldValue::serverTimestamp()]
+            ['path' => 'rejectedAt',  'value' => null],
+            ['path' => 'updatedAt',   'value' => FieldValue::serverTimestamp()]
         ];
 
         $seekerReference->update($newElement);
+
+        $firstName  = $seekerSnapshot->data()['firstName'] ?? '';
+        $lastName   = $seekerSnapshot->data()['lastName'] ?? '';
+        $adminDocs  = $this->database->collection('admins')->documents();
+        foreach ($adminDocs as $adminDoc) {
+            if (!$adminDoc->exists()) continue;
+            NotificationService::notify(
+                $adminDoc->id(),
+                'verification_submitted',
+                'New Verification Request',
+                "{$firstName} {$lastName} submitted documents for review.",
+                ['userUid' => $uid, 'userType' => 'seeker']
+            );
+        }
 
         if ($isFirstSetup) {
             $prefs = $seekerSnapshot->data()['preferences'] ?? [];

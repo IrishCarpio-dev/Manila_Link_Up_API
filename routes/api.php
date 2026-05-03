@@ -84,6 +84,7 @@ Route::middleware([FirebaseAuthMiddleware::class])->group(function () {
     Route::get('/admin/users',                  [AdminController::class, 'listUsers']);
     Route::post('/admin/verifyUser',            [AdminController::class, 'verifyUser']);
     Route::post('/admin/rejectVerification',    [AdminController::class, 'rejectVerification']);
+    Route::get('/admin/pendingVerifications',   [AdminController::class, 'pendingVerifications']);
     Route::get('/admin/analytics/overview',     [AdminController::class, 'analyticsOverview']);
     Route::get('/admin/analytics/tags',         [AdminController::class, 'analyticsTags']);
     Route::get('/admin/analytics/funnel',       [AdminController::class, 'analyticsFunnel']);

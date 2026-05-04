@@ -153,6 +153,8 @@ class SeekerController extends Controller
             ['path' => 'updatedAt',   'value' => FieldValue::serverTimestamp()]
         ];
 
+        $isFirstSetup = !($seekerSnapshot->data()['isProfileSet'] ?? false);
+
         $seekerReference->update($newElement);
 
         $firstName  = $seekerSnapshot->data()['firstName'] ?? '';

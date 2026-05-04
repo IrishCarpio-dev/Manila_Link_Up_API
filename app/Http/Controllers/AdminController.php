@@ -18,6 +18,11 @@ class AdminController extends Controller
         $this->database = Firebase::firestore()->database();
     }
 
+    private function assetUrl(?string $path): ?string
+    {
+        return $path ? url($path) : null;
+    }
+
     private function assertAdmin(string $uid): bool
     {
         return $this->database
@@ -455,8 +460,8 @@ class AdminController extends Controller
                     'firstName'       => $doc['firstName'] ?? null,
                     'lastName'        => $doc['lastName'] ?? null,
                     'email'           => $doc['email'] ?? null,
-                    'validIdUrl'      => $doc['validIdUrl'] ?? null,
-                    'clearanceUrl'    => $doc['clearanceUrl'] ?? null,
+                    'validIdUrl'      => $this->assetUrl($doc['validIdUrl'] ?? null),
+                    'clearanceUrl'    => $this->assetUrl($doc['clearanceUrl'] ?? null),
                     'profilePhotoUrl' => $doc['profilePhotoUrl'] ?? null,
                     'updatedAt'       => $doc['updatedAt'] ?? null,
                 ];
@@ -471,8 +476,8 @@ class AdminController extends Controller
                     'firstName'       => $doc['fullName'] ?? null,
                     'lastName'        => null,
                     'email'           => $doc['email'] ?? null,
-                    'validIdUrl'      => $doc['validIdUrl'] ?? null,
-                    'clearanceUrl'    => $doc['clearanceUrl'] ?? null,
+                    'validIdUrl'      => $this->assetUrl($doc['validIdUrl'] ?? null),
+                    'clearanceUrl'    => $this->assetUrl($doc['clearanceUrl'] ?? null),
                     'profilePhotoUrl' => $doc['profilePhotoUrl'] ?? null,
                     'updatedAt'       => $doc['updatedAt'] ?? null,
                 ];

@@ -63,7 +63,7 @@ class ChatController extends Controller
         });
 
         $perPage  = (int) $request->input('limit', 20);
-        $allChats = array_slice(array_values($allChats), 0, $perPage);
+        $allChats = array_slice(array_values($allChats), 0, $perPage + 1);
 
         // Batch-fetch counterpart profiles and job titles
         $jobIds      = array_unique(array_column($allChats, 'jobId'));
@@ -111,11 +111,19 @@ class ChatController extends Controller
         }
         unset($chat);
 
-        $allChats = array_map([$this, 'formatDoc'], array_values($allChats));
+        $hasMore = count($allChats) > $perPage;
+        if ($hasMore) {
+            array_pop($allChats);
+        }
+
+        $allChats   = array_map([$this, 'formatDoc'], array_values($allChats));
+        $nextCursor = $hasMore ? (end($allChats)['lastMessageAt'] ?? null) : null;
 
         return response()->json([
-            'message' => 'Chats retrieved successfully',
-            'data'    => $allChats,
+            'message'    => 'Chats retrieved successfully',
+            'data'       => $allChats,
+            'hasMore'    => $hasMore,
+            'nextCursor' => $nextCursor,
         ], 200);
     }
 
@@ -131,7 +139,7 @@ class ChatController extends Controller
             $query  = $query->startAfter([$cursor]);
         }
 
-        $docs   = $query->limit((int) $request->input('limit', 20))->documents();
+        $docs   = $query->limit((int) $request->input('limit', 20) + 1)->documents();
         $chats  = [];
         foreach ($docs as $doc) {
             if ($doc->exists()) {

@@ -318,47 +318,116 @@ class JobController extends Controller
         }
 
         validator($request->all(), [
-            'limit' => ['sometimes', 'integer', 'min:1', 'max:50'],
+            'limit'      => ['sometimes', 'integer', 'min:1', 'max:50'],
+            'status'     => ['sometimes', 'string', 'in:archived,expired,completed'],
+            'startAfter' => ['sometimes', 'string'],
         ])->validate();
 
         $limit        = (int) $request->input('limit', 20);
+        $status       = $request->input('status');
         $nowTimestamp = new Timestamp(Carbon::now()->toDateTimeImmutable());
-        // Epoch sentinel: any non-null server timestamp will be greater than this
         $epoch        = new Timestamp(Carbon::createFromDate(2000, 1, 1)->toDateTimeImmutable());
         $col          = $this->database->collection('jobs');
-        $seen         = [];
         $allJobs      = [];
+        $hasMore      = false;
+        $nextCursor   = null;
 
-        $queries = [
-            // Deleted (soft-archived) jobs — deletedAt is a timestamp, not null
-            $col->where('employer', '=', $uid)
+        $cursorTs = $request->filled('startAfter')
+            ? new Timestamp(Carbon::parse($request->startAfter)->toDateTimeImmutable())
+            : null;
+
+        if ($status === 'archived') {
+            $query = $col->where('employer', '=', $uid)
                 ->where('deletedAt', '>', $epoch)
                 ->orderBy('deletedAt', 'desc')
-                ->limit($limit),
+                ->limit($limit + 1);
+            if ($cursorTs) {
+                $query = $query->startAfter([$cursorTs]);
+            }
+            foreach ($query->documents() as $doc) {
+                if ($doc->exists()) {
+                    $data = $doc->data(); $data['id'] = $doc->id();
+                    $allJobs[] = $data;
+                }
+            }
+            $hasMore = count($allJobs) > $limit;
+            if ($hasMore) array_pop($allJobs);
+            $last = !empty($allJobs) ? end($allJobs) : null;
+            if ($hasMore && $last && ($last['deletedAt'] ?? null) instanceof Timestamp) {
+                $nextCursor = $last['deletedAt']->get()->format('c');
+            }
 
-            // Filled jobs (hired / completed) — not deleted
-            $col->where('employer', '=', $uid)
+        } elseif ($status === 'completed') {
+            $query = $col->where('employer', '=', $uid)
                 ->where('deletedAt', '=', null)
                 ->where('filledAt', '>', $epoch)
                 ->orderBy('filledAt', 'desc')
-                ->limit($limit),
+                ->limit($limit + 1);
+            if ($cursorTs) {
+                $query = $query->startAfter([$cursorTs]);
+            }
+            foreach ($query->documents() as $doc) {
+                if ($doc->exists()) {
+                    $data = $doc->data(); $data['id'] = $doc->id();
+                    $allJobs[] = $data;
+                }
+            }
+            $hasMore = count($allJobs) > $limit;
+            if ($hasMore) array_pop($allJobs);
+            $last = !empty($allJobs) ? end($allJobs) : null;
+            if ($hasMore && $last && ($last['filledAt'] ?? null) instanceof Timestamp) {
+                $nextCursor = $last['filledAt']->get()->format('c');
+            }
 
-            // Expired jobs — not filled, not deleted
-            $col->where('employer', '=', $uid)
+        } elseif ($status === 'expired') {
+            $query = $col->where('employer', '=', $uid)
                 ->where('deletedAt', '=', null)
                 ->where('filledAt', '=', null)
                 ->where('expiresAt', '<', $nowTimestamp)
                 ->orderBy('expiresAt', 'desc')
-                ->limit($limit),
-        ];
-
-        foreach ($queries as $query) {
+                ->limit($limit + 1);
+            if ($cursorTs) {
+                $query = $query->startAfter([$cursorTs]);
+            }
             foreach ($query->documents() as $doc) {
-                if ($doc->exists() && !isset($seen[$doc->id()])) {
-                    $seen[$doc->id()] = true;
-                    $data             = $doc->data();
-                    $data['id']       = $doc->id();
-                    $allJobs[]        = $data;
+                if ($doc->exists()) {
+                    $data = $doc->data(); $data['id'] = $doc->id();
+                    $allJobs[] = $data;
+                }
+            }
+            $hasMore = count($allJobs) > $limit;
+            if ($hasMore) array_pop($allJobs);
+            $last = !empty($allJobs) ? end($allJobs) : null;
+            if ($hasMore && $last && ($last['expiresAt'] ?? null) instanceof Timestamp) {
+                $nextCursor = $last['expiresAt']->get()->format('c');
+            }
+
+        } else {
+            $seen    = [];
+            $queries = [
+                $col->where('employer', '=', $uid)
+                    ->where('deletedAt', '>', $epoch)
+                    ->orderBy('deletedAt', 'desc')
+                    ->limit($limit),
+                $col->where('employer', '=', $uid)
+                    ->where('deletedAt', '=', null)
+                    ->where('filledAt', '>', $epoch)
+                    ->orderBy('filledAt', 'desc')
+                    ->limit($limit),
+                $col->where('employer', '=', $uid)
+                    ->where('deletedAt', '=', null)
+                    ->where('filledAt', '=', null)
+                    ->where('expiresAt', '<', $nowTimestamp)
+                    ->orderBy('expiresAt', 'desc')
+                    ->limit($limit),
+            ];
+            foreach ($queries as $query) {
+                foreach ($query->documents() as $doc) {
+                    if ($doc->exists() && !isset($seen[$doc->id()])) {
+                        $seen[$doc->id()] = true;
+                        $data = $doc->data(); $data['id'] = $doc->id();
+                        $allJobs[] = $data;
+                    }
                 }
             }
         }
@@ -381,6 +450,23 @@ class JobController extends Controller
             $hiredSeekers[$seekerUid] = $snap->exists() ? $snap->data() : null;
         }
 
+        $completedAppIds = array_values(array_filter(
+            array_map(fn($a) => ($a['status'] ?? null) === 6 ? $a['id'] : null, $hiredApps)
+        ));
+        $employerRatings = [];
+        foreach (array_chunk($completedAppIds, 30) as $chunk) {
+            $ratingDocs = $this->database->collection('ratings')
+                ->where('applicationId', 'in', $chunk)
+                ->where('raterRole', '=', 'employer')
+                ->documents();
+            foreach ($ratingDocs as $doc) {
+                if ($doc->exists()) {
+                    $data = $doc->data();
+                    $employerRatings[$data['applicationId']] = $data;
+                }
+            }
+        }
+
         foreach ($allJobs as &$job) {
             $appId = $job['hiredApplicationId'] ?? null;
             $app   = $appId ? ($hiredApps[$appId] ?? null) : null;
@@ -397,24 +483,44 @@ class JobController extends Controller
                         'lastName'  => $seekerData['lastName']  ?? null,
                     ] : null,
                 ];
+
+                if ($app['status'] === 6) {
+                    $rating = $employerRatings[$app['id']] ?? null;
+                    if ($rating === null) {
+                        $job['isRateEnabled'] = true;
+                    } else {
+                        $createdAt     = $rating['createdAt'];
+                        $createdAtTime = $createdAt instanceof Timestamp
+                            ? Carbon::createFromTimestamp($createdAt->get()->getTimestamp())
+                            : Carbon::parse($createdAt);
+                        $job['isRateEnabled'] = $createdAtTime->diffInHours(Carbon::now()) < 24;
+                    }
+                } else {
+                    $job['isRateEnabled'] = false;
+                }
             } else {
                 $job['hiredApplication'] = null;
+                $job['isRateEnabled']    = false;
             }
         }
         unset($job);
 
-        usort($allJobs, function ($a, $b) {
-            $ts = fn($j) => ($j['updatedAt'] instanceof Timestamp)
-                ? $j['updatedAt']->get()->getTimestamp()
-                : 0;
-            return $ts($b) <=> $ts($a);
-        });
+        if (!$status) {
+            usort($allJobs, function ($a, $b) {
+                $ts = fn($j) => ($j['updatedAt'] instanceof Timestamp)
+                    ? $j['updatedAt']->get()->getTimestamp()
+                    : 0;
+                return $ts($b) <=> $ts($a);
+            });
+        }
 
         $allJobs = array_map([$this, 'formatDoc'], $allJobs);
 
         return response()->json([
-            'message' => 'Archived jobs retrieved successfully',
-            'data'    => $allJobs,
+            'message'    => 'Archived jobs retrieved successfully',
+            'data'       => $allJobs,
+            'hasMore'    => $hasMore,
+            'nextCursor' => $nextCursor,
         ], 200);
     }
 

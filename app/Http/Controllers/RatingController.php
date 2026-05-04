@@ -212,7 +212,7 @@ class RatingController extends Controller
         }
 
         $perPage  = (int) $request->input('limit', 15);
-        $docs     = $query->limit($perPage)->documents();
+        $docs     = $query->limit($perPage + 1)->documents();
         $ratings  = [];
 
         foreach ($docs as $doc) {
@@ -221,6 +221,11 @@ class RatingController extends Controller
                 $data['id'] = $doc->id();
                 $ratings[]  = $data;
             }
+        }
+
+        $hasMore = count($ratings) > $perPage;
+        if ($hasMore) {
+            $ratings = array_slice($ratings, 0, $perPage);
         }
 
         // Batch-fetch rater profiles
@@ -260,11 +265,14 @@ class RatingController extends Controller
         }
         unset($rating);
 
-        $ratings = array_map([$this, 'formatDoc'], $ratings);
+        $ratings    = array_map([$this, 'formatDoc'], $ratings);
+        $nextCursor = $hasMore ? (end($ratings)['createdAt'] ?? null) : null;
 
         return response()->json([
-            'message' => 'Ratings retrieved successfully',
-            'data'    => $ratings,
+            'message'    => 'Ratings retrieved successfully',
+            'data'       => $ratings,
+            'hasMore'    => $hasMore,
+            'nextCursor' => $nextCursor,
         ], 200);
     }
 }

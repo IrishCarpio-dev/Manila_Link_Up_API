@@ -37,7 +37,7 @@ class NotificationController extends Controller
         }
 
         $perPage   = (int) $request->input('limit', 20);
-        $documents = $query->limit($perPage)->documents();
+        $documents = $query->limit($perPage + 1)->documents();
 
         $notifications = [];
         foreach ($documents as $doc) {
@@ -46,7 +46,18 @@ class NotificationController extends Controller
             }
         }
 
-        return response()->json(['data' => $notifications], 200);
+        $hasMore    = count($notifications) > $perPage;
+        $nextCursor = null;
+        if ($hasMore) {
+            array_pop($notifications);
+            $nextCursor = end($notifications)['created_at'] ?? null;
+        }
+
+        return response()->json([
+            'data'       => $notifications,
+            'hasMore'    => $hasMore,
+            'nextCursor' => $nextCursor,
+        ], 200);
     }
 
     public function readAll(Request $request)

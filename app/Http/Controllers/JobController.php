@@ -152,6 +152,22 @@ class JobController extends Controller
         return response()->json(['message' => 'Job deleted successfully'], 200);
     }
 
+    private function durationToMinutes(string $duration): int
+    {
+        if (!preg_match('/^(\d+)\s+(hour|day|week|month|year)\(s\)$/i', $duration, $m)) {
+            return 0;
+        }
+        $n = (int) $m[1];
+        return match (strtolower($m[2])) {
+            'hour'  => $n * 60,
+            'day'   => $n * 1440,
+            'week'  => $n * 10080,
+            'month' => $n * 43200,
+            'year'  => $n * 525600,
+            default => 0,
+        };
+    }
+
     public function seekerJobs(Request $request)
     {
         $uid = $request->authUid;
@@ -173,19 +189,32 @@ class JobController extends Controller
         $seekerData = $seekerSnap->data();
 
         validator($request->all(), [
-            'mode'               => ['sometimes', 'string', 'in:curated,all'],
-            'limit'              => ['sometimes', 'integer', 'min:1', 'max:50'],
-            'startAfter'         => ['sometimes', 'string'],
+            'mode'                => ['sometimes', 'string', 'in:curated,all'],
+            'sortBy'              => ['sometimes', 'string', 'in:createdAt,salary,duration'],
+            'order'               => ['sometimes', 'string', 'in:asc,desc'],
+            'filterBy'            => ['sometimes', 'array', 'min:1'],
+            'filterBy.*'          => ['string', 'in:location,tags', 'distinct'],
+            'location'            => [Rule::requiredIf(fn() => in_array('location', $request->input('filterBy', []))), 'string'],
+            'tags'                => [Rule::requiredIf(fn() => in_array('tags', $request->input('filterBy', []))), 'array', 'min:1'],
+            'tags.*'              => ['string'],
+            'limit'               => ['sometimes', 'integer', 'min:1', 'max:50'],
+            'startAfter'          => ['sometimes', 'string'],
             'startAfterCreatedAt' => ['sometimes', 'string'],
+            'startAfterSalary'    => ['sometimes', 'numeric'],
+            'startAfterOffset'    => ['sometimes', 'integer', 'min:0'],
         ])->validate();
 
-        $mode    = $request->input('mode', 'curated');
-        $perPage = (int) $request->input('limit', 15);
+        $sortBy    = $request->input('sortBy');
+        $order     = $request->input('order');
+        $filterBy  = $request->input('filterBy', []);
+        $useCustom = $sortBy !== null || !empty($filterBy);
+        $mode      = $useCustom ? 'all' : $request->input('mode', 'curated');
+        $perPage   = (int) $request->input('limit', 15);
 
-        $preferences   = $seekerData['preferences'] ?? [];
-        $prefTags      = $preferences['tags'] ?? [];
-        $prefSalary    = isset($preferences['preferredSalary']) ? (integer) $preferences['preferredSalary'] : null;
-        $prefLocation  = $preferences['preferredLocation'] ?? null;
+        $preferences  = $seekerData['preferences'] ?? [];
+        $prefTags     = $preferences['tags'] ?? [];
+        $prefSalary   = isset($preferences['preferredSalary']) ? (int) $preferences['preferredSalary'] : null;
+        $prefLocation = $preferences['preferredLocation'] ?? null;
 
         $nowTimestamp = new Timestamp(Carbon::now()->toDateTimeImmutable());
         $query = $this->database->collection('jobs')
@@ -194,40 +223,73 @@ class JobController extends Controller
             ->where('completedAt', '=', null)
             ->where('expiresAt',   '>', $nowTimestamp);
 
-        $phpSalaryFilter    = false;
-        $phpLocationFilter  = $mode === 'curated' && !empty($prefLocation);
-        $phpCompletedFilter = false;
+        $phpSalaryFilter   = false;
+        $phpLocationFilter = false;
+        $phpDurationSort   = false;
 
-        if ($mode === 'curated') {
-            $phpSalaryFilter = $prefSalary !== null;
+        if ($useCustom) {
+            if (in_array('location', $filterBy)) {
+                $query = $query->where('location', '=', $request->input('location'));
+            }
+            if (in_array('tags', $filterBy)) {
+                $query = $query->where('tags', 'array-contains-any', $request->input('tags'));
+            }
+        } else {
+            $phpSalaryFilter   = $mode === 'curated' && $prefSalary !== null;
+            $phpLocationFilter = $mode === 'curated' && !empty($prefLocation);
 
-            if (!empty($prefTags)) {
+            if ($mode === 'curated' && !empty($prefTags)) {
                 $query = $query->where('tags', 'array-contains-any', $prefTags);
-            } 
-            
+            }
             if ($phpSalaryFilter) {
                 $query = $query->where('salary', '>=', $prefSalary);
             }
         }
 
-        $query = $query
-            ->orderBy('expiresAt', 'asc')
-            ->orderBy('createdAt', 'desc');
-
-        if ($request->filled('startAfter')) {
-            $expiresAtCursor  = new Timestamp(Carbon::parse($request->startAfter)->toDateTimeImmutable());
-            $createdAtCursor  = $request->filled('startAfterCreatedAt')
-                ? new Timestamp(Carbon::parse($request->startAfterCreatedAt)->toDateTimeImmutable())
-                : null;
-            $cursorValues = $createdAtCursor
-                ? [$expiresAtCursor, $createdAtCursor]
-                : [$expiresAtCursor];
-            $query = $query->startAfter($cursorValues);
+        if ($sortBy === 'salary') {
+            $query = $query->orderBy('salary', $order ?? 'desc')->orderBy('createdAt', 'desc');
+        } elseif ($sortBy === 'duration') {
+            $phpDurationSort = true;
+            $query           = $query->orderBy('createdAt', 'desc');
+        } elseif ($useCustom) {
+            $query = $query->orderBy('createdAt', $order ?? 'desc');
+        } else {
+            $query = $query->orderBy('expiresAt', 'asc')->orderBy('createdAt', 'desc');
         }
 
-        $applyPhpFilters = $phpSalaryFilter || $phpLocationFilter || $phpCompletedFilter;
-        $fetchLimit      = min($perPage * 3, 100);
-        $documents       = $query->limit($fetchLimit)->documents();
+        $offset = 0;
+        if ($phpDurationSort) {
+            $offset     = (int) $request->input('startAfterOffset', 0);
+            $fetchLimit = 200;
+        } elseif ($sortBy === 'salary') {
+            if ($request->filled('startAfterSalary') && $request->filled('startAfterCreatedAt')) {
+                $query = $query->startAfter([
+                    (float) $request->input('startAfterSalary'),
+                    new Timestamp(Carbon::parse($request->startAfterCreatedAt)->toDateTimeImmutable()),
+                ]);
+            }
+            $fetchLimit = $perPage + 1;
+        } elseif ($useCustom) {
+            if ($request->filled('startAfterCreatedAt')) {
+                $query = $query->startAfter([
+                    new Timestamp(Carbon::parse($request->startAfterCreatedAt)->toDateTimeImmutable()),
+                ]);
+            }
+            $fetchLimit = $perPage + 1;
+        } else {
+            if ($request->filled('startAfter')) {
+                $expiresAtCursor = new Timestamp(Carbon::parse($request->startAfter)->toDateTimeImmutable());
+                $createdAtCursor = $request->filled('startAfterCreatedAt')
+                    ? new Timestamp(Carbon::parse($request->startAfterCreatedAt)->toDateTimeImmutable())
+                    : null;
+                $query = $query->startAfter(
+                    $createdAtCursor ? [$expiresAtCursor, $createdAtCursor] : [$expiresAtCursor]
+                );
+            }
+            $fetchLimit = ($phpSalaryFilter || $phpLocationFilter) ? min($perPage * 3, 100) : $perPage + 1;
+        }
+
+        $documents = $query->limit($fetchLimit)->documents();
 
         $jobs = [];
         foreach ($documents as $doc) {
@@ -238,7 +300,7 @@ class JobController extends Controller
             }
         }
 
-        if ($applyPhpFilters) {
+        if ($phpSalaryFilter || $phpLocationFilter) {
             $jobs = array_values(array_filter($jobs, function ($job) use ($phpSalaryFilter, $prefSalary, $phpLocationFilter, $prefLocation) {
                 if ($phpSalaryFilter && isset($job['salary']) && (float) $job['salary'] < $prefSalary) {
                     return false;
@@ -250,7 +312,7 @@ class JobController extends Controller
             }));
         }
 
-        $jobIds = array_column($jobs, 'id');
+        $jobIds        = array_column($jobs, 'id');
         $appliedJobIds = [];
         foreach (array_chunk($jobIds, 30) as $chunk) {
             $appDocs = $this->database->collection('applications')
@@ -264,8 +326,18 @@ class JobController extends Controller
             }
         }
         $appliedJobIds = array_flip($appliedJobIds);
-        $jobs = array_values(array_filter($jobs, fn($job) => !isset($appliedJobIds[$job['id']])));
-        $jobs = array_slice($jobs, 0, $perPage);
+        $jobs          = array_values(array_filter($jobs, fn($j) => !isset($appliedJobIds[$j['id']])));
+
+        if ($phpDurationSort) {
+            usort($jobs, fn($a, $b) =>
+                ($order === 'desc' ? -1 : 1) *
+                ($this->durationToMinutes($a['duration'] ?? '') <=> $this->durationToMinutes($b['duration'] ?? ''))
+            );
+            $jobs = array_slice($jobs, $offset, $perPage + 1);
+        }
+
+        $hasMore = count($jobs) > $perPage;
+        $jobs    = array_slice($jobs, 0, $perPage);
 
         $employerUids     = array_unique(array_column($jobs, 'employer'));
         $employerProfiles = [];
@@ -283,18 +355,35 @@ class JobController extends Controller
         }
         unset($job);
 
-        $hasMore    = count($jobs) >= $perPage;
         $lastJob    = !empty($jobs) ? end($jobs) : null;
-        $nextCursor = ($hasMore && $lastJob)
-            ? [
-                'expiresAt' => $lastJob['expiresAt'] instanceof Timestamp
-                    ? $lastJob['expiresAt']->get()->format('c')
-                    : $lastJob['expiresAt'],
-                'createdAt' => $lastJob['createdAt'] instanceof Timestamp
-                    ? $lastJob['createdAt']->get()->format('c')
-                    : $lastJob['createdAt'],
-            ]
-            : null;
+        $nextCursor = null;
+        if ($hasMore && $lastJob) {
+            if ($phpDurationSort) {
+                $nextCursor = ['offset' => $offset + $perPage];
+            } elseif ($sortBy === 'salary') {
+                $nextCursor = [
+                    'salary'    => $lastJob['salary'],
+                    'createdAt' => $lastJob['createdAt'] instanceof Timestamp
+                        ? $lastJob['createdAt']->get()->format('c')
+                        : $lastJob['createdAt'],
+                ];
+            } elseif ($useCustom) {
+                $nextCursor = [
+                    'createdAt' => $lastJob['createdAt'] instanceof Timestamp
+                        ? $lastJob['createdAt']->get()->format('c')
+                        : $lastJob['createdAt'],
+                ];
+            } else {
+                $nextCursor = [
+                    'expiresAt' => $lastJob['expiresAt'] instanceof Timestamp
+                        ? $lastJob['expiresAt']->get()->format('c')
+                        : $lastJob['expiresAt'],
+                    'createdAt' => $lastJob['createdAt'] instanceof Timestamp
+                        ? $lastJob['createdAt']->get()->format('c')
+                        : $lastJob['createdAt'],
+                ];
+            }
+        }
 
         $jobs = array_map([$this, 'formatDoc'], $jobs);
 

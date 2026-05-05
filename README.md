@@ -1,59 +1,88 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Manila Link Up API
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Backend API for **Manila Link Up**, a job-matching platform connecting domestic workers (seekers) with employers in Manila, Philippines.
 
-## About Laravel
+## Tech Stack
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+| Layer | Technology |
+|---|---|
+| Framework | Laravel 12 (PHP) |
+| Primary datastore | Google Cloud Firestore |
+| Infrastructure DB | SQLite (queues, cache, sessions, Sanctum) |
+| Auth | Firebase Authentication (JWT) |
+| Push notifications | Firebase Cloud Messaging (FCM) |
+| Firebase SDK | `kreait/laravel-firebase` v7, `google/cloud-firestore` v1.55 |
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## Architecture
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+Laravel acts as a thin API and queue layer — **Firestore is the source of truth** for all business entities (seekers, employers, jobs, applications, chats, ratings, notifications). SQLite holds only Laravel infrastructure tables.
 
-## Learning Laravel
+All routes are defined in `routes/api.php`. Business action endpoints use `POST` even for reads (e.g. `/jobs/list`). Admin analytics endpoints use `GET`. All JSON fields use `camelCase`.
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
+## Local Setup
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+```bash
+git clone <repo>
+cd manilalinkup-api
 
-## Laravel Sponsors
+composer install
+cp .env.example .env
+php artisan key:generate
+php artisan migrate
+```
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+Add your Firebase service account JSON path to `.env`:
 
-### Premium Partners
+```env
+FIREBASE_CREDENTIALS=path/to/serviceAccount.json
+```
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+Start the server:
 
-## Contributing
+```bash
+php artisan serve
+```
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+> **WSL2 note:** `google/cloud-firestore` v1.55 uses gRPC only. On WSL2, add `zend.max_allowed_stack_size = -1` to `php.ini` to prevent stack overflow. Find it with `php --ini | grep "Loaded Configuration"`.
 
-## Code of Conduct
+## Authentication
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+All endpoints require a Firebase ID token:
 
-## Security Vulnerabilities
+```
+Authorization: Bearer <firebase_id_token>
+```
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+Admin endpoints additionally require the caller's UID to exist in the `admins` Firestore collection.
 
-## License
+## User Roles
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+- **Seeker** — registers, sets up profile (ID + clearance upload), browses jobs, applies, chats with employers, rates
+- **Employer** — registers, sets up profile, posts jobs, manages applicants, hires, rates
+- **Admin** — reviews pending verifications, views platform analytics
+
+Seekers and employers must be verified by an admin before they can apply or post jobs.
+
+## Key Features
+
+- Curated job feed based on seeker preferences (tags, salary, location)
+- Application lifecycle: Pending → Interview → Hired → Completed
+- In-app notifications + FCM push notifications
+- Bayesian average ratings for both seekers and employers
+- Admin dashboard analytics (overview, funnel, timeseries, user stats, tag stats, rating stats)
+- Document verification workflow (ID + police clearance upload)
+
+## Location
+
+Jobs, seekers, and employers are scoped to the 16 official districts of Manila:
+
+`Binondo`, `Ermita`, `Intramuros`, `Malate`, `Paco`, `Pandacan`, `Port Area`, `Quiapo`, `Sampaloc`, `San Andres`, `San Miguel`, `San Nicolas`, `Santa Ana`, `Santa Cruz`, `Santa Mesa`, `Tondo`
+
+## Docs
+
+- [`docs/API.md`](docs/API.md) — full endpoint reference (request/response shapes)
+- [`docs/FIRESTORE.md`](docs/FIRESTORE.md) — Firestore collections and field schemas
+
+## Firebase Plan
+
+This app runs on the **free tier (Spark plan)**. Features that require Blaze (Cloud Functions, Cloud Run) are not used.

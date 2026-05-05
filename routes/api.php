@@ -90,6 +90,7 @@ Route::middleware([FirebaseAuthMiddleware::class])->group(function () {
     Route::get('/admin/analytics/funnel',       [AdminController::class, 'analyticsFunnel']);
     Route::get('/admin/analytics/timeseries',   [AdminController::class, 'analyticsTimeseries']);
     Route::get('/admin/analytics/users',        [AdminController::class, 'analyticsUsers']);
+    Route::get('/admin/analytics/users/growth', [AdminController::class, 'analyticsUsersGrowth']);
     Route::get('/admin/analytics/ratings',      [AdminController::class, 'analyticsRatings']);
     
     // Service Tags

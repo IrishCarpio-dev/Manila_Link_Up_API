@@ -18,9 +18,18 @@ class AdminController extends Controller
         $this->database = Firebase::firestore()->database();
     }
 
-    private function assertAdmin(string $role): bool
+    private function assetUrl(?string $path): ?string
     {
-        return $role === 'admin';
+        return $path ? url($path) : null;
+    }
+
+    private function assertAdmin(string $uid): bool
+    {
+        return $this->database
+            ->collection('admins')
+            ->document($uid)
+            ->snapshot()
+            ->exists();
     }
 
     public function verifyUser(Request $request)
@@ -31,7 +40,7 @@ class AdminController extends Controller
             return response()->json(['error' => 'UID not found'], 400);
         }
 
-        if (!$this->assertAdmin($request->authRole)) {
+        if (!$this->assertAdmin($request->authUid)) {
             return response()->json(['error' => 'Unauthorized access'], 401);
         }
 
@@ -118,12 +127,27 @@ class AdminController extends Controller
 
     public function analyticsOverview(Request $request)
     {
-        if (!$this->assertAdmin($request->authRole)) {
+        if (!$this->assertAdmin($request->authUid)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
         $jobs         = $this->allDocs('jobs');
         $applications = $this->allDocs('applications');
+
+        $days = (int) $request->input('days', 0);
+        if ($days > 0) {
+            $cutoff = Carbon::now()->subDays($days);
+            $jobs = array_values(array_filter($jobs, function ($j) use ($cutoff) {
+                $ts = $j['createdAt'] ?? null;
+                return $ts instanceof Timestamp
+                    && Carbon::createFromTimestamp($ts->get()->getTimestamp())->isAfter($cutoff);
+            }));
+            $applications = array_values(array_filter($applications, function ($a) use ($cutoff) {
+                $ts = $a['createdAt'] ?? null;
+                return $ts instanceof Timestamp
+                    && Carbon::createFromTimestamp($ts->get()->getTimestamp())->isAfter($cutoff);
+            }));
+        }
 
         $totalJobs    = count($jobs);
         $now          = Carbon::now();
@@ -168,7 +192,7 @@ class AdminController extends Controller
 
     public function analyticsTags(Request $request)
     {
-        if (!$this->assertAdmin($request->authRole)) {
+        if (!$this->assertAdmin($request->authUid)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -220,7 +244,7 @@ class AdminController extends Controller
 
     public function analyticsFunnel(Request $request)
     {
-        if (!$this->assertAdmin($request->authRole)) {
+        if (!$this->assertAdmin($request->authUid)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -257,7 +281,7 @@ class AdminController extends Controller
 
     public function analyticsTimeseries(Request $request)
     {
-        if (!$this->assertAdmin($request->authRole)) {
+        if (!$this->assertAdmin($request->authUid)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -310,7 +334,7 @@ class AdminController extends Controller
 
     public function analyticsUsers(Request $request)
     {
-        if (!$this->assertAdmin($request->authRole)) {
+        if (!$this->assertAdmin($request->authUid)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -320,8 +344,8 @@ class AdminController extends Controller
         $verifiedSeekers   = count(array_filter($seekers,   fn($s) => $s['isVerified'] ?? false));
         $verifiedEmployers = count(array_filter($employers, fn($e) => $e['isVerified'] ?? false));
 
-        // New signups last 30 days
-        $cutoff = new Timestamp(Carbon::now()->subDays(30)->toDateTimeImmutable());
+        $days   = (int) $request->input('days', 30);
+        $cutoff = new Timestamp(Carbon::now()->subDays($days)->toDateTimeImmutable());
 
         $newSeekers = count(array_filter($seekers, function ($s) use ($cutoff) {
             $ts = $s['createdAt'] ?? null;
@@ -335,19 +359,19 @@ class AdminController extends Controller
         return response()->json([
             'message' => 'User analytics retrieved',
             'data'    => [
-                'totalSeekers'       => count($seekers),
-                'totalEmployers'     => count($employers),
-                'verifiedSeekers'    => $verifiedSeekers,
-                'verifiedEmployers'  => $verifiedEmployers,
-                'newSeekersLast30d'  => $newSeekers,
-                'newEmployersLast30d' => $newEmployers,
+                'totalSeekers'      => count($seekers),
+                'totalEmployers'    => count($employers),
+                'verifiedSeekers'   => $verifiedSeekers,
+                'verifiedEmployers' => $verifiedEmployers,
+                'newSeekers'        => $newSeekers,
+                'newEmployers'      => $newEmployers,
             ],
         ], 200);
     }
 
     public function analyticsRatings(Request $request)
     {
-        if (!$this->assertAdmin($request->authRole)) {
+        if (!$this->assertAdmin($request->authUid)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -382,8 +406,167 @@ class AdminController extends Controller
         ], 200);
     }
 
+    public function listSeekers(Request $request)
+    {
+        if (!$this->assertAdmin($request->authUid)) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        $docs = $this->allDocs('seekers');
+
+        if ($request->has('verified')) {
+            $flag = filter_var($request->query('verified'), FILTER_VALIDATE_BOOLEAN);
+            $docs = array_values(array_filter($docs, fn($s) => ($s['isVerified'] ?? false) === $flag));
+        }
+
+        return response()->json([
+            'message' => 'Seekers retrieved',
+            'data'    => array_map(function ($s) {
+                $doc = $this->formatDoc($s);
+                $doc['validIdUrl']   = $this->assetUrl($s['validIdUrl'] ?? null);
+                $doc['clearanceUrl'] = $this->assetUrl($s['clearanceUrl'] ?? null);
+                return $doc;
+            }, $docs),
+        ], 200);
+    }
+
+    public function listEmployers(Request $request)
+    {
+        if (!$this->assertAdmin($request->authUid)) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        $docs = $this->allDocs('employers');
+
+        if ($request->has('verified')) {
+            $flag = filter_var($request->query('verified'), FILTER_VALIDATE_BOOLEAN);
+            $docs = array_values(array_filter($docs, fn($e) => ($e['isVerified'] ?? false) === $flag));
+        }
+
+        return response()->json([
+            'message' => 'Employers retrieved',
+            'data'    => array_map(function ($e) {
+                $doc = $this->formatDoc($e);
+                $doc['validIdUrl']   = $this->assetUrl($e['validIdUrl'] ?? null);
+                $doc['clearanceUrl'] = $this->assetUrl($e['clearanceUrl'] ?? null);
+                return $doc;
+            }, $docs),
+        ], 200);
+    }
+
+    public function listUsers(Request $request)
+    {
+        if (!$this->assertAdmin($request->authUid)) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        $seekers   = array_map(fn($s) => $this->formatDoc($s) + ['type' => 'seeker'],   $this->allDocs('seekers'));
+        $employers = array_map(fn($e) => $this->formatDoc($e) + ['type' => 'employer'],  $this->allDocs('employers'));
+
+        return response()->json([
+            'message' => 'Users retrieved',
+            'data'    => array_merge($seekers, $employers),
+        ], 200);
+    }
+
+    public function pendingVerifications(Request $request)
+    {
+        if (!$this->assertAdmin($request->authUid)) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        $pending = [];
+
+        foreach ($this->allDocs('seekers') as $doc) {
+            if (($doc['isProfileSet'] ?? false) && !($doc['isVerified'] ?? false) && ($doc['rejectedAt'] ?? null) === null) {
+                $pending[] = [
+                    'uid'             => $doc['id'],
+                    'userType'        => 'seeker',
+                    'firstName'       => $doc['firstName'] ?? null,
+                    'lastName'        => $doc['lastName'] ?? null,
+                    'email'           => $doc['email'] ?? null,
+                    'validIdUrl'      => $this->assetUrl($doc['validIdUrl'] ?? null),
+                    'clearanceUrl'    => $this->assetUrl($doc['clearanceUrl'] ?? null),
+                    'profilePhotoUrl' => $doc['profilePhotoUrl'] ?? null,
+                    'updatedAt'       => $doc['updatedAt'] ?? null,
+                ];
+            }
+        }
+
+        foreach ($this->allDocs('employers') as $doc) {
+            if (($doc['isProfileSet'] ?? false) && !($doc['isVerified'] ?? false) && ($doc['rejectedAt'] ?? null) === null) {
+                $pending[] = [
+                    'uid'             => $doc['id'],
+                    'userType'        => 'employer',
+                    'firstName'       => $doc['fullName'] ?? null,
+                    'lastName'        => null,
+                    'email'           => $doc['email'] ?? null,
+                    'validIdUrl'      => $this->assetUrl($doc['validIdUrl'] ?? null),
+                    'clearanceUrl'    => $this->assetUrl($doc['clearanceUrl'] ?? null),
+                    'profilePhotoUrl' => $doc['profilePhotoUrl'] ?? null,
+                    'updatedAt'       => $doc['updatedAt'] ?? null,
+                ];
+            }
+        }
+
+        usort($pending, function ($a, $b) {
+            $tsA = $a['updatedAt'] instanceof Timestamp ? $a['updatedAt']->get()->getTimestamp() : 0;
+            $tsB = $b['updatedAt'] instanceof Timestamp ? $b['updatedAt']->get()->getTimestamp() : 0;
+            return $tsA <=> $tsB;
+        });
+
+        return response()->json([
+            'message' => 'Pending verifications retrieved',
+            'data'    => array_map(fn($item) => $this->formatDoc($item), $pending),
+        ], 200);
+    }
+
     // Reads all docs from a collection — suitable for current data volume.
     // Future: consider cached materialization for large collections.
+    public function analyticsUsersGrowth(Request $request)
+    {
+        if (!$this->assertAdmin($request->authUid)) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        $seekers   = $this->allDocs('seekers');
+        $employers = $this->allDocs('employers');
+
+        $data = [];
+
+        foreach ($seekers as $s) {
+            $ts = $s['createdAt'] ?? null;
+            if ($ts instanceof Timestamp) {
+                $carbon = Carbon::createFromTimestamp($ts->get()->getTimestamp());
+                $year  = $carbon->year;
+                $month = (int) $carbon->format('n');
+                $data[$year]['seekers'][$month] = ($data[$year]['seekers'][$month] ?? 0) + 1;
+            }
+        }
+
+        foreach ($employers as $e) {
+            $ts = $e['createdAt'] ?? null;
+            if ($ts instanceof Timestamp) {
+                $carbon = Carbon::createFromTimestamp($ts->get()->getTimestamp());
+                $year  = $carbon->year;
+                $month = (int) $carbon->format('n');
+                $data[$year]['employers'][$month] = ($data[$year]['employers'][$month] ?? 0) + 1;
+            }
+        }
+
+        $result = [];
+        foreach ($data as $year => $types) {
+            $result[$year] = [
+                'seekers'   => array_map(fn($m) => $types['seekers'][$m]   ?? 0, range(1, 12)),
+                'employers' => array_map(fn($m) => $types['employers'][$m] ?? 0, range(1, 12)),
+            ];
+        }
+
+        krsort($result);
+
+        return response()->json(['message' => 'User growth retrieved', 'data' => $result], 200);
+    }
+
     private function allDocs(string $collection): array
     {
         $docs   = $this->database->collection($collection)->documents();

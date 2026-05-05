@@ -165,11 +165,12 @@ class JobController extends Controller
         }
 
         $seekerSnap = $this->database->collection('seekers')->document($uid)->snapshot();
-        $seekerData = $seekerSnap->data();
 
-        if (!($seekerData['isProfileSet'] ?? false)) {
-            return response()->json(['error' => 'Profile must be set up before browsing jobs'], 403);
+        if (!$seekerSnap->exists()) {
+            return response()->json(['error' => 'Seeker not found'], 404);
         }
+
+        $seekerData = $seekerSnap->data();
 
         validator($request->all(), [
             'mode'               => ['sometimes', 'string', 'in:curated,all'],

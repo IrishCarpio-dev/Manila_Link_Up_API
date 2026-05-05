@@ -79,13 +79,18 @@ Route::middleware([FirebaseAuthMiddleware::class])->group(function () {
     Route::get('/notifications/unread-count', [NotificationController::class, 'unreadCount']);
 
     // Admin
+    Route::get('/admin/seekers',                [AdminController::class, 'listSeekers']);
+    Route::get('/admin/employers',              [AdminController::class, 'listEmployers']);
+    Route::get('/admin/users',                  [AdminController::class, 'listUsers']);
     Route::post('/admin/verifyUser',            [AdminController::class, 'verifyUser']);
     Route::post('/admin/rejectVerification',    [AdminController::class, 'rejectVerification']);
+    Route::get('/admin/pendingVerifications',   [AdminController::class, 'pendingVerifications']);
     Route::get('/admin/analytics/overview',     [AdminController::class, 'analyticsOverview']);
     Route::get('/admin/analytics/tags',         [AdminController::class, 'analyticsTags']);
     Route::get('/admin/analytics/funnel',       [AdminController::class, 'analyticsFunnel']);
     Route::get('/admin/analytics/timeseries',   [AdminController::class, 'analyticsTimeseries']);
     Route::get('/admin/analytics/users',        [AdminController::class, 'analyticsUsers']);
+    Route::get('/admin/analytics/users/growth', [AdminController::class, 'analyticsUsersGrowth']);
     Route::get('/admin/analytics/ratings',      [AdminController::class, 'analyticsRatings']);
     
     // Service Tags

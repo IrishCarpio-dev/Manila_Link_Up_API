@@ -42,6 +42,11 @@ class JobController extends Controller
             return response()->json(['error' => 'Only employers can create jobs'], 403);
         }
 
+        $employerSnap = $this->database->collection('employers')->document($uid)->snapshot();
+        if (!$employerSnap->exists() || !($employerSnap->data()['isVerified'] ?? false)) {
+            return response()->json(['error' => 'Account not verified.'], 403);
+        }
+
         $tagRefs    = array_map(fn($id) => $this->database->collection('serviceTags')->document($id), $request->tags);
         $tagSnapMap = [];
         foreach ($this->database->documents($tagRefs) as $snap) {
